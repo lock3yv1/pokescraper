@@ -1,7 +1,6 @@
 {
-  "name": "pokescraper",
-  "version": "1.0.0",
-  "description": "UK Pokemon TCG stock alert scraper",
+  "name": "lock3ys-pokescraper",
+  "version": "2.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
