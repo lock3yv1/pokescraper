@@ -4,36 +4,62 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Fallback pricing so the bot never ignores a product
-const RRP_DEFAULTS = { "box": 144.99, "etb": 49.99, "bundle": 24.99, "pack": 4.49, "upc": 119.99, "tin": 24.99 };
-const EXCLUDE = ["japanese", "jp", "korean", "chinese", "sleeve", "binder", "playmat", "digital", "code"];
+const RRP = {
+  "booster box": 144.99, "elite trainer box": 49.99, "etb": 49.99,
+  "booster bundle": 24.99, "upc": 119.99, "ultra premium": 119.99,
+  "booster pack": 4.49, "collection box": 29.99, "tin": 24.99
+};
+
+const RESELL = {
+  "151 booster box": 180, "151 booster bundle": 55, "151 etb": 70,
+  "prismatic evolutions booster box": 220, "prismatic evolutions etb": 95,
+  "surging sparks booster box": 155, "evolving skies booster box": 800,
+  "perfect order etb": 60, "journey together booster box": 120,
+  "ascended heroes etb": 65, "destined rivals booster box": 130
+};
+
+const PRODUCT_KEYWORDS = ["booster box", "box", "etb", "trainer box", "bundle", "upc", "premium collection", "tin"];
+const EXCLUDE = ["single", "promo", "graded", "psa", "sleeve", "binder", "playmat", "digital", "japanese", "jp", "korean"];
 
 function getAnalysis(title, price) {
   const t = title.toLowerCase();
   if (EXCLUDE.some(k => t.includes(k))) return null;
+  if (!PRODUCT_KEYWORDS.some(k => t.includes(k))) return null;
 
-  // Determine Type for RRP calculation
-  let type = "box";
-  if (t.includes("etb") || t.includes("trainer")) type = "etb";
-  else if (t.includes("bundle")) type = "bundle";
-  else if (t.includes("pack")) type = "pack";
-  else if (t.includes("upc") || t.includes("ultra")) type = "upc";
-  else if (t.includes("tin")) type = "tin";
-  
-  const rrpVal = RRP_DEFAULTS[type] || 144.99;
+  let rrpVal = null;
+  for (const [key, val] of Object.entries(RRP)) {
+    if (t.includes(key)) { rrpVal = val; break; }
+  }
+  if (!rrpVal) return null;
+
+  let resellVal = null;
+  for (const [key, val] of Object.entries(RESELL)) {
+    if (t.includes(key)) { resellVal = val; break; }
+  }
+  if (!resellVal) resellVal = rrpVal * 1.15;
+
   const diff = Math.round(((price - rrpVal) / rrpVal) * 100);
-  
-  // Dynamic Resell: Assumes 20% profit margin if set is unknown
-  const estResell = rrpVal * 1.2;
-  const flip = (estResell - price - (estResell * 0.13) - 4).toFixed(2);
+  const flip = (resellVal - price - (resellVal * 0.13) - 4).toFixed(2);
 
-  return { rrp: rrpVal, resell: estResell, diff, flip };
+  return { rrp: rrpVal, resell: resellVal, diff, flip };
 }
 
 async function fetchPage(url) {
+  const agents = [
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+  ];
+
   try {
     const res = await fetch(url, { 
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" } 
+      headers: { 
+        "User-Agent": agents[Math.floor(Math.random() * agents.length)],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.5",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1"
+      } 
     });
     return res.ok ? await res.text() : null;
   } catch { return null; }
@@ -42,14 +68,13 @@ async function fetchPage(url) {
 function extract(html, base) {
   const $ = cheerio.load(html);
   const items = [];
-  // Massive selector list to catch products on ANY shop layout
-  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .item, .product-layout, .product-grid-item, .product-listing").each((_, el) => {
-    const title = $(el).find("h2, h3, h4, .product-title, .title, .name, .product-name").first().text().trim();
-    const priceText = $(el).find("[class*='price'], .amount, .money, .current-price").first().text().replace(/[^0-9.]/g, "");
+  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .item, .product-layout, .product-grid-item").each((_, el) => {
+    const title = $(el).find("h2, h3, h4, .product-title, .title, .name").first().text().trim();
+    const priceText = $(el).find("[class*='price'], .amount, .money").first().text().replace(/[^0-9.]/g, "");
     const price = parseFloat(priceText);
     const link = $(el).find("a[href]").first().attr("href");
     
-    if (title && price > 3 && link && !$(el).text().toLowerCase().includes("sold out")) {
+    if (title && price > 12 && link && !$(el).text().toLowerCase().includes("sold out")) {
       const url = link.startsWith("http") ? link : `${new URL(base).origin}${link.startsWith('/') ? '' : '/'}${link}`;
       items.push({ title, price, url });
     }
@@ -67,25 +92,20 @@ const RETAILERS = [
 ];
 
 async function run() {
-  console.log(`🚀 FORCING FULL SCRAPE: ${new Date().toLocaleTimeString()}`);
+  console.log(`🚀 STEALTH SCAN: ${new Date().toLocaleTimeString()}`);
   const notified = new Set();
-
   for (const shop of RETAILERS) {
-    console.log(`  → Crawling ${shop.name}...`);
+    console.log(`Checking ${shop.name}...`);
     const html = await fetchPage(shop.url);
-    if (!html) { console.log(`    ⚠️ Connection Blocked`); continue; }
+    if (!html) { console.log(`  ⚠️ Still Blocked`); continue; }
 
     const items = extract(html, shop.url);
-    console.log(`    Found ${items.length} items total`);
-
     for (const item of items) {
-      if (notified.has(item.url)) continue;
-      
       const analysis = getAnalysis(item.title, item.price);
-      if (analysis) {
+      if (analysis && !notified.has(item.url)) {
         notified.add(item.url);
-        const emoji = analysis.diff <= 5 ? "🔥" : "❌";
-        const msg = `${emoji} <b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${analysis.rrp} (${analysis.diff > 0 ? "+" : ""}${analysis.diff}%)\n📈 EST RESELL: £${analysis.resell.toFixed(2)}\n🏷️ FLIP: £${analysis.flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
+        const score = analysis.diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
+        const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${analysis.rrp.toFixed(2)} (${analysis.diff > 0 ? "+" : ""}${analysis.diff}%)\n📈 RESELL: £${analysis.resell.toFixed(2)}\n🏷️ FLIP: £${analysis.flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
 
         await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
           method: "POST", headers: { "Content-Type": "application/json" }, 
@@ -93,8 +113,8 @@ async function run() {
         });
       }
     }
-    await wait(2000); // 2s pause to stay stealthy
+    await wait(3000); // Longer wait to prevent IP flags
   }
 }
 
-run().then(() => { console.log("✅ Scan Done."); process.exit(0); });
+run().then(() => process.exit(0));
