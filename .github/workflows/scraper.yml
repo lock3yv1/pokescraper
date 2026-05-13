@@ -16,7 +16,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # Removed cache: 'npm' to prevent lockfile error
+
+      - name: Verify Files
+        run: ls -R # Logs exactly what files are in your repo for debugging
 
       - name: Install Dependencies
         run: npm install node-fetch cheerio
@@ -25,4 +27,10 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node index.js
+        run: |
+          if [ -f index.js ]; then
+            node index.js
+          else
+            echo "::error::index.js not found! Ensure it is in the root directory."
+            exit 1
+          fi
