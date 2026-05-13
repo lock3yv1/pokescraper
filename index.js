@@ -1,12 +1,10 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
-const cron = require("node-cron");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const CHECK_INTERVAL = "*/10 * * * *";
 
-// ─── RRP (Official Pokemon retail price) ──────────────────────────────────
+// ─── RRP ───────────────────────────────────────────────────────────────────
 const RRP = {
   "booster box": 144.99,
   "elite trainer box": 49.99,
@@ -25,7 +23,7 @@ const RRP = {
   "display box": 299.99,
 };
 
-// ─── RESELL PRICES (eBay UK sold listings) ─────────────────────────────────
+// ─── RESELL PRICES ─────────────────────────────────────────────────────────
 const RESELL = {
   "ascended heroes booster box": 165,
   "ascended heroes elite trainer box": 65,
@@ -76,54 +74,29 @@ const RESELL = {
   "hidden fates booster box": 400,
 };
 
-// ─── SEALED PRODUCT KEYWORDS (must contain one of these) ──────────────────
+// ─── SEALED KEYWORDS ───────────────────────────────────────────────────────
 const SEALED_KEYWORDS = [
-  "booster box",
-  "elite trainer box",
-  "etb",
-  "half box",
-  "booster bundle",
-  "booster pack",
-  "collection box",
-  "poster collection",
-  "build and battle",
-  "build & battle",
-  "pin collection",
-  "deluxe pin collection",
-  "premier deck",
-  "display box",
-  "tin",
-  "mini tins",
+  "booster box", "elite trainer box", "etb", "half box",
+  "booster bundle", "collection box", "poster collection",
+  "build and battle", "build & battle", "pin collection",
+  "deluxe pin collection", "premier deck", "display box", "mini tins",
 ];
 
-// ─── EXCLUDE if title contains any of these ────────────────────────────────
-const EXCLUDE_TITLE_KEYWORDS = [
-  // Other card games
+const EXCLUDE_KEYWORDS = [
   "yugioh", "yu-gi-oh", "magic the gathering", "mtg", "digimon",
   "one piece", "dragon ball", "lorcana", "flesh and blood",
   "cardfight", "vanguard", "weiss", "buddyfight",
-  // Single cards / non-sealed
-  "single", "holo", "reverse holo", "full art", "secret rare",
-  "illustration rare", "special illustration", "hyper rare",
-  "graded", "psa", "bgs", "cgc", "ace grade",
-  "lot of", "x10", "x20", "x50", "bundle of cards",
-  "custom", "proxy", "fake", "replica",
+  "single", "holo", "full art", "secret rare", "graded",
+  "psa", "bgs", "cgc", "lot of", "proxy", "fake",
   "sleeve", "sleeves", "deck box", "playmat", "binder",
   "dice", "coin", "energy cards", "card lot",
 ];
 
-function isSealedPokemonProduct(title) {
+function isSealedPokemon(title) {
   const t = title.toLowerCase();
-
-  // Must contain "pokemon"
   if (!t.includes("pokemon")) return false;
-
-  // Must not contain excluded keywords
-  if (EXCLUDE_TITLE_KEYWORDS.some(k => t.includes(k))) return false;
-
-  // Must be a sealed product type
+  if (EXCLUDE_KEYWORDS.some(k => t.includes(k))) return false;
   if (!SEALED_KEYWORDS.some(k => t.includes(k))) return false;
-
   return true;
 }
 
@@ -137,7 +110,6 @@ function getRRP(title) {
 
 function getResell(title) {
   const t = title.toLowerCase();
-  // Try full key match first
   for (const [key, price] of Object.entries(RESELL)) {
     if (t.includes(key)) return price;
   }
@@ -152,6 +124,14 @@ function getDealScore(buyNow, rrp) {
   if (diff <= 20)  return "slightly";
   return "overpriced";
 }
+
+const SCORE_LABELS = {
+  excellent:  "🔥 EXCELLENT DEAL",
+  good:       "✅ GOOD DEAL",
+  fair:       "⚖️ FAIR PRICE",
+  slightly:   "⚠️ SLIGHTLY OVERPRICED",
+  overpriced: "❌ OVERPRICED",
+};
 
 // ─── SEARCH TERMS ──────────────────────────────────────────────────────────
 const SEARCH_TERMS = [
@@ -173,10 +153,9 @@ const SEARCH_TERMS = [
   "pokemon tcg lost origin sealed",
   "pokemon tcg silver tempest sealed",
   "pokemon tcg crown zenith sealed",
-  "pokemon tcg astral radiance sealed",
+  "pokemon tcg evolving skies sealed",
   "pokemon tcg brilliant stars sealed",
   "pokemon tcg fusion strike sealed",
-  "pokemon tcg evolving skies sealed",
   "pokemon tcg chilling reign sealed",
   "pokemon tcg battle styles sealed",
   "pokemon tcg shining fates sealed",
@@ -420,7 +399,7 @@ async function scrapeRetailer(retailer, term) {
   try {
     const res = await axios.get(retailer.searchUrl(term), { headers: HEADERS, timeout: 15000 });
     const $ = cheerio.load(res.data);
-    return retailer.parseResults($).filter(r => isSealedPokemonProduct(r.title));
+    return retailer.parseResults($).filter(r => isSealedPokemon(r.title));
   } catch (e) {
     console.log(`[${retailer.name}] Error: ${e.message}`);
     return [];
@@ -428,8 +407,8 @@ async function scrapeRetailer(retailer, term) {
 }
 
 async function runScan() {
-  console.log(`\n🔍 [${new Date().toLocaleTimeString()}] Scanning ${RETAILERS.length} retailers...`);
-  const newFindings = [];
+  console.log(`\n🔍 Scanning ${RETAILERS.length} retailers...`);
+  const findings = [];
 
   for (const term of SEARCH_TERMS) {
     for (const retailer of RETAILERS) {
@@ -437,60 +416,62 @@ async function runScan() {
       for (const r of results) {
         const rrp = getRRP(r.title);
         const resell = getResell(r.title);
-
-        // ONLY alert if we have BOTH rrp AND resell data — no guessing
         if (!rrp || !resell) {
           console.log(`  ⚪ SKIPPED (no price data): ${r.title}`);
           continue;
         }
-
         const key = `${retailer.name}::${r.url || r.title}`;
         if (!notifiedUrls.has(key)) {
           notifiedUrls.add(key);
-          newFindings.push({ retailer: retailer.name, rrp, resell, ...r });
+          findings.push({ retailer: retailer.name, rrp, resell, ...r });
           console.log(`  🟢 [${retailer.name}] ${r.title} — £${r.price}`);
         }
       }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
 
-  for (const f of newFindings) {
+  for (const f of findings) {
     const score = getDealScore(f.price, f.rrp);
     const vsRrp = Math.round(((f.price - f.rrp) / f.rrp) * 100);
     const vsResell = Math.round(((f.resell - f.price) / f.price) * 100);
-
-    const scoreLabels = {
-      excellent: "🔥 EXCELLENT DEAL",
-      good: "✅ GOOD DEAL",
-      fair: "⚖️ FAIR PRICE",
-      slightly: "⚠️ SLIGHTLY OVERPRICED",
-      overpriced: "❌ OVERPRICED",
-    };
+    const ebayFees = f.resell * 0.13;
+    const flipProfit = (f.resell - f.price - ebayFees - 4).toFixed(2);
 
     const msg = [
-      scoreLabels[score],
+      SCORE_LABELS[score],
       ``,
       `<b>${f.title}</b>`,
       `🏪 ${f.retailer}`,
       ``,
       `💰 BUY NOW:  £${f.price.toFixed(2)}`,
       `📊 RRP:      £${f.rrp.toFixed(2)}  (${vsRrp > 0 ? "+" : ""}${vsRrp}% vs RRP)`,
-      `📈 RESELL:   £${f.resell.toFixed(2)}  (${vsResell > 0 ? "+" : ""}${vsResell}% ${vsResell >= 0 ? "profit" : "loss"})`,
+      `📈 RESELL:   £${f.resell.toFixed(2)}  (${vsResell > 0 ? "+" : ""}${vsResell}% potential)`,
+      `🏷️ FLIP:     ${flipProfit > 0 ? "+" : ""}£${flipProfit} after eBay fees`,
       ``,
       `<a href="${f.url}">👉 BUY NOW →</a>`,
     ].join("\n");
 
     await sendTelegram(msg);
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  if (newFindings.length === 0) console.log("  ⬜ No new confirmed findings.");
+  if (findings.length === 0) {
+    console.log("  ⬜ No confirmed findings this scan.");
+  } else {
+    console.log(`\n✅ Sent ${findings.length} alerts.`);
+  }
 }
 
-console.log("🚀 Lock3y's PokéScraper — Sealed Products Only");
+// Run once and exit — GitHub Actions handles scheduling
+console.log("🚀 Lock3y's PokéScraper — Single Run");
 console.log(`🏪 ${RETAILERS.length} retailers · ${SEARCH_TERMS.length} sets`);
-console.log(`✅ Only alerts when RRP + Resell data confirmed\n`);
+console.log(`✅ Sealed products only · Full 3-way price comparison\n`);
 
-runScan();
-cron.schedule(CHECK_INTERVAL, runScan);
+runScan().then(() => {
+  console.log("✅ Scan complete. Exiting.");
+  process.exit(0);
+}).catch(e => {
+  console.error("Fatal error:", e.message);
+  process.exit(1);
+});
