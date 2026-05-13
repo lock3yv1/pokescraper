@@ -34,32 +34,36 @@ const RESELL = {
   "ninja spinner booster box": 150, "heat wave arena booster box": 180, "mega dream ex booster box": 160
 };
 
-const SETS = ["ascended heroes","destined rivals","perfect order","chaos rising","phantasmal flames","journey together","prismatic evolutions","surging sparks","stellar crown","temporal forces","paradox rift","obsidian flames","151","evolving skies","brilliant stars","fusion strike","lost origin","silver tempest","crown zenith","chilling reign","battle styles","shining fates","hidden fates","ninja spinner","heat wave arena","mega dream ex"];
+const SETS = ["ascended heroes","destined rivals","perfect order","chaos rising","phantasmal flames","journey together","prismatic evolutions","surging sparks","stellar crown","temporal forces","paradox rift","obsidian flames","151","evolving skies","brilliant stars","fusion strike","lost origin","silver tempest","crown zenith","chilling reign","battle styles","shining fates","hidden fates","ninja spinner","heat wave arena","mega dream ex","mega evolution"];
 const PRODUCT_KEYWORDS = ["booster box","elite trainer box","etb","booster bundle","booster pack","collection box","tin","blister","premium collection","special collection","upc"];
-const EXCLUDE = ["yugioh","yu-gi-oh","mtg","magic the gathering","lorcana","single","graded","psa","sleeve","playmat","binder"];
+const EXCLUDE = ["yugioh","yu-gi-oh","mtg","magic","lorcana","single","graded","psa","sleeve","playmat","binder"];
 
 function isValid(title) {
   const t = title.toLowerCase();
-  return (t.includes("pokemon") || t.includes("pokémon")) && 
-         SETS.some(s => t.includes(s)) && 
-         PRODUCT_KEYWORDS.some(k => t.includes(k)) &&
-         !EXCLUDE.some(k => t.includes(k));
+  if (EXCLUDE.some(k => t.includes(k))) return false;
+  const hasPokemon = t.includes("pokemon") || t.includes("pokémon");
+  const hasSet = SETS.some(s => t.includes(s));
+  const hasKeyword = PRODUCT_KEYWORDS.some(k => t.includes(k));
+  return hasPokemon && hasSet && hasKeyword;
 }
 
 function getMatch(title, list) {
   const t = title.toLowerCase();
   let best = null;
   for (const [k, v] of Object.entries(list)) {
-    if (t.includes(k) && (!best || k.length > best.k.length)) best = { k, v };
+    if (t.includes(k)) {
+      if (!best || k.length > best.k.length) best = { k, v };
+    }
   }
   return best ? best.v : null;
 }
 
 async function fetchPage(url) {
   try {
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" } });
-    if (res.status === 404) return null;
-    return await res.text();
+    const res = await fetch(url, { 
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" } 
+    });
+    return res.ok ? await res.text() : null;
   } catch { return null; }
 }
 
@@ -67,25 +71,29 @@ function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
   $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product").each((_, el) => {
-    let title = $(el).find("h2, h3, h4, .product-title, .title").text().replace(/\s+/g, ' ').trim();
-    let price = parseFloat($(el).find("[class*='price']").text().replace(/[^0-9.]/g, ""));
-    let link = $(el).find("a[href]").attr("href");
+    const titleEl = $(el).find("h2, h3, h4, .product-title, .title").first();
+    const title = titleEl.text().replace(/\s+/g, ' ').trim();
+    const priceText = $(el).find("[class*='price']").first().text().replace(/[^0-9.]/g, "");
+    const price = parseFloat(priceText);
+    const link = $(el).find("a[href]").first().attr("href");
+    
     if (title && price > 0 && link && !$(el).text().toLowerCase().includes("sold out")) {
-      items.push({ title, price, url: link.startsWith("http") ? link : `${new URL(baseUrl).origin}${link.startsWith('/') ? '' : '/'}${link}` });
+      const fullUrl = link.startsWith("http") ? link : `${baseUrl}${link.startsWith('/') ? '' : '/'}${link}`;
+      items.push({ title, price, url: fullUrl });
     }
   });
   return items;
 }
 
 const RETAILERS = [
-  { name: "Miniso", base: "https://minisouk.com", url: "https://minisouk.com/collections/pokemon" },
-  { name: "Total Cards", base: "https://totalcards.net", url: "https://totalcards.net/collections/pokemon-trading-card-game" },
-  { name: "Japan2UK", base: "https://japan2uk.com", url: "https://japan2uk.com/collections/pokemon-english" },
-  { name: "Titan Cards", base: "https://titancards.co.uk", url: "https://titancards.co.uk/collections/pokemon-sealed-product" },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", url: "https://doublesleeved.co.uk/collections/pokemon" },
-  { name: "The Card Vault", base: "https://thecardvault.co.uk", url: "https://thecardvault.co.uk/collections/pokemon-sealed-product" },
-  { name: "Cosmic Col.", base: "https://cosmiccollectables.co.uk", url: "https://cosmiccollectables.co.uk/collections/pokemon" },
-  { name: "My TCG", base: "https://mytcg.co.uk", url: "https://mytcg.co.uk/collections/pokemon-sealed-product" }
+  { name: "Miniso", base: "https://minisouk.com", url: "https://minisouk.com/search?q=pokemon" },
+  { name: "Total Cards", base: "https://totalcards.net", url: "https://totalcards.net/search?q=pokemon+sealed" },
+  { name: "Japan2UK", base: "https://japan2uk.com", url: "https://japan2uk.com/search?q=pokemon+english" },
+  { name: "Titan Cards", base: "https://titancards.co.uk", url: "https://titancards.co.uk/search?q=pokemon+sealed" },
+  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", url: "https://doublesleeved.co.uk/search?q=pokemon" },
+  { name: "The Card Vault", base: "https://thecardvault.co.uk", url: "https://thecardvault.co.uk/search?q=pokemon+sealed" },
+  { name: "Cosmic Col.", base: "https://cosmiccollectables.co.uk", url: "https://cosmiccollectables.co.uk/search?q=pokemon" },
+  { name: "My TCG", base: "https://mytcg.co.uk", url: "https://mytcg.co.uk/search?q=pokemon+sealed" }
 ];
 
 const notified = new Set();
@@ -94,20 +102,29 @@ async function runScan() {
   console.log(`🔍 Scan Started: ${new Date().toLocaleTimeString()}`);
   for (const shop of RETAILERS) {
     const html = await fetchPage(shop.url);
-    if (!html) { console.log(`  → ${shop.name} (Failed/404)`); continue; }
+    if (!html) { console.log(`  → ${shop.name} (Fetch Failed)`); continue; }
+    
     const items = extractProducts(html, shop.base);
     console.log(`  → ${shop.name} (${items.length} items found)`);
+    
     for (const item of items) {
       if (isValid(item.title)) {
         const rrp = getMatch(item.title, RRP);
         const resell = getMatch(item.title, RESELL);
+        
         if (rrp && resell && !notified.has(item.url)) {
           notified.add(item.url);
-          const diff = ((item.price - rrp) / rrp * 100).toFixed(0);
+          const vsRrp = Math.round(((item.price - rrp) / rrp) * 100);
           const flip = (resell - item.price - (resell * 0.13) - 4).toFixed(2);
-          const score = diff <= 0 ? "🔥 DEAL" : "❌ OVERPRICED";
-          const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price}\n📊 RRP: £${rrp} (${diff}% vs RRP)\n📈 RESELL: £${resell}\n🏷️ FLIP: £${flip}\n\n<a href="${item.url}">👉 BUY NOW →</a>`;
-          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) });
+          const score = vsRrp <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
+          
+          const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${rrp.toFixed(2)} (${vsRrp > 0 ? "+" : ""}${vsRrp}%)\n📈 RESELL: £${resell.toFixed(2)}\n🏷️ FLIP: £${flip}\n\n<a href="${item.url}">👉 BUY NOW →</a>`;
+          
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
+          });
         }
       }
     }
