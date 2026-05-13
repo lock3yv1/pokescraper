@@ -150,6 +150,13 @@ const BLOCK = [
   "psa", "bgs", "cgc", "lot of", "proxy", "fake",
   "sleeve", "playmat", "binder", "dice", "bulk", "funko", "plush",
   "etb case", "booster box case", "case of",
+  "korean booster", "japanese booster", "japanese pokemon",
+  "glory of team rocket", "ruler of the black flame", "gem pack",
+  "ninja spinner", "mega dream ex", "chinese", "sv3a", "sv4a", "sv5k",
+  "terastal", "wild force", "cyber judge", "clay burst",
+  "union arena", "grand archive", "star wars unlimited",
+  "sleeve", "sleeves", "plush", "figure", "toy", "coin",
+  "sealed case", "booster case", "display case",
 ];
 
 // ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
@@ -318,114 +325,110 @@ function parseShopify(html, baseUrl) {
   return items;
 }
 
+// Core search terms — covers all product types and all sets
+const CORE_SEARCHES = [
+  // Product types
+  "pokemon+booster+box",
+  "pokemon+elite+trainer+box",
+  "pokemon+booster+bundle",
+  "pokemon+booster+pack",
+  "pokemon+half+booster+box",
+  "pokemon+tin",
+  "pokemon+collection+box",
+  "pokemon+poster+collection",
+  "pokemon+blister",
+  // Newest sets explicitly
+  "pokemon+ascended+heroes",
+  "pokemon+destined+rivals",
+  "pokemon+perfect+order",
+  "pokemon+chaos+rising",
+  "pokemon+phantasmal+flames",
+  "pokemon+journey+together",
+  "pokemon+prismatic+evolutions",
+  "pokemon+surging+sparks",
+  "pokemon+stellar+crown",
+  "pokemon+shrouded+fable",
+  "pokemon+twilight+masquerade",
+  "pokemon+temporal+forces",
+  "pokemon+paradox+rift",
+  "pokemon+obsidian+flames",
+  "pokemon+151",
+  "pokemon+paldean+fates",
+  "pokemon+crown+zenith",
+  "pokemon+silver+tempest",
+  "pokemon+lost+origin",
+  "pokemon+brilliant+stars",
+  "pokemon+fusion+strike",
+  "pokemon+evolving+skies",
+  "pokemon+chilling+reign",
+  "pokemon+battle+styles",
+  "pokemon+shining+fates",
+  "pokemon+vivid+voltage",
+  "pokemon+hidden+fates",
+  "pokemon+cosmic+eclipse",
+];
+
+function shopifyUrls(base) {
+  return CORE_SEARCHES.map(q => `https://${base}/search?q=${q}&type=product`);
+}
+
 const RETAILERS = [
-  {
-    name: "Total Cards", base: "https://totalcards.net",
-    urls: [
-      // Search broad terms that return all sets at once
-      "https://totalcards.net/search?q=pokemon+booster+box&type=product",
-      "https://totalcards.net/search?q=pokemon+elite+trainer+box&type=product",
-      "https://totalcards.net/search?q=pokemon+ascended+heroes&type=product",
-      "https://totalcards.net/search?q=pokemon+destined+rivals&type=product",
-      "https://totalcards.net/search?q=pokemon+booster+bundle&type=product",
-    ],
-  },
-  {
-    name: "Titan Cards", base: "https://titancards.co.uk",
-    urls: [
-      "https://titancards.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://titancards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://titancards.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://titancards.co.uk/search?q=pokemon+destined+rivals&type=product",
-      "https://titancards.co.uk/search?q=pokemon+half+box&type=product",
-    ],
-  },
-  {
-    name: "Eterna Cards", base: "https://eternacards.co.uk",
-    urls: [
-      "https://eternacards.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+destined+rivals&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+half+booster+box&type=product",
-    ],
-  },
-  {
-    name: "PACKRAT", base: "https://packratt.co.uk",
-    urls: [
-      "https://packratt.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://packratt.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://packratt.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://packratt.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
-  {
-    name: "Double Sleeved", base: "https://doublesleeved.co.uk",
-    urls: [
-      "https://doublesleeved.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://doublesleeved.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://doublesleeved.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://doublesleeved.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
-  {
-    name: "Toys N Geek", base: "https://www.toysngeek.co.uk",
-    urls: [
-      "https://www.toysngeek.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://www.toysngeek.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://www.toysngeek.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://www.toysngeek.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
-  {
-    name: "The Card Vault", base: "https://thecardvault.co.uk",
-    urls: [
-      "https://thecardvault.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://thecardvault.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://thecardvault.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
-  {
-    name: "My TCG", base: "https://mytcg.co.uk",
-    urls: [
-      "https://mytcg.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://mytcg.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://mytcg.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
-  {
-    name: "Gathering Games", base: "https://gatheringgames.co.uk",
-    urls: [
-      "https://gatheringgames.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://gatheringgames.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://gatheringgames.co.uk/search?q=pokemon+ascended+heroes&type=product",
-      "https://gatheringgames.co.uk/search?q=pokemon+destined+rivals&type=product",
-    ],
-  },
+  { name: "Total Cards",    base: "https://totalcards.net",          urls: shopifyUrls("totalcards.net") },
+  { name: "Titan Cards",    base: "https://titancards.co.uk",        urls: shopifyUrls("titancards.co.uk") },
+  { name: "Eterna Cards",   base: "https://eternacards.co.uk",       urls: shopifyUrls("eternacards.co.uk") },
+  { name: "PACKRAT",        base: "https://packratt.co.uk",          urls: shopifyUrls("packratt.co.uk") },
+  { name: "Double Sleeved", base: "https://doublesleeved.co.uk",     urls: shopifyUrls("doublesleeved.co.uk") },
+  { name: "Toys N Geek",    base: "https://www.toysngeek.co.uk",     urls: shopifyUrls("www.toysngeek.co.uk") },
+  { name: "The Card Vault", base: "https://thecardvault.co.uk",      urls: shopifyUrls("thecardvault.co.uk") },
+  { name: "My TCG",         base: "https://mytcg.co.uk",             urls: shopifyUrls("mytcg.co.uk") },
+  { name: "Gathering Games",base: "https://gatheringgames.co.uk",    urls: shopifyUrls("gatheringgames.co.uk") },
   {
     name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",
-    urls: [
-      "https://magicmadhouse.co.uk/search?q=pokemon+booster+box",
-      "https://magicmadhouse.co.uk/search?q=pokemon+elite+trainer+box",
-      "https://magicmadhouse.co.uk/search?q=pokemon+ascended+heroes",
-      "https://magicmadhouse.co.uk/search?q=pokemon+destined+rivals",
-    ],
+    urls: CORE_SEARCHES.map(q => `https://magicmadhouse.co.uk/search?q=${q}`),
   },
   {
     name: "Zatu Games", base: "https://www.board-game.co.uk",
-    urls: [
-      "https://www.board-game.co.uk/search?q=pokemon+booster+box",
-      "https://www.board-game.co.uk/search?q=pokemon+elite+trainer+box",
-      "https://www.board-game.co.uk/search?q=pokemon+ascended+heroes",
-      "https://www.board-game.co.uk/search?q=pokemon+destined+rivals",
-    ],
+    urls: CORE_SEARCHES.map(q => `https://www.board-game.co.uk/search?q=${q}`),
   },
   {
     name: "365 Games", base: "https://www.365games.co.uk",
+    urls: CORE_SEARCHES.map(q => `https://www.365games.co.uk/search?q=${q}`),
+  },
+  {
+    name: "Smyths", base: "https://www.smythstoys.com",
     urls: [
-      "https://www.365games.co.uk/search?q=pokemon+booster+box",
-      "https://www.365games.co.uk/search?q=pokemon+ascended+heroes",
-      "https://www.365games.co.uk/search?q=pokemon+destined+rivals",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+bundle",
+    ],
+  },
+  {
+    name: "Argos", base: "https://www.argos.co.uk",
+    urls: [
+      "https://www.argos.co.uk/search/pokemon-booster-box/",
+      "https://www.argos.co.uk/search/pokemon-elite-trainer-box/",
+      "https://www.argos.co.uk/search/pokemon-trading-cards/",
+    ],
+  },
+  {
+    name: "GAME", base: "https://www.game.co.uk",
+    urls: [
+      "https://www.game.co.uk/search?q=pokemon+booster+box",
+      "https://www.game.co.uk/search?q=pokemon+elite+trainer+box",
+      "https://www.game.co.uk/search?q=pokemon+ascended+heroes",
+      "https://www.game.co.uk/search?q=pokemon+destined+rivals",
+    ],
+  },
+  {
+    name: "Amazon UK", base: "https://www.amazon.co.uk",
+    urls: [
+      "https://www.amazon.co.uk/s?k=pokemon+booster+box+scarlet+violet&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+evolving+skies+booster+box&rh=p_85%3A1",
     ],
   },
 ];
@@ -534,7 +537,7 @@ async function runScan() {
     console.log(`  → ${retailer.name}`);
 
     for (const url of retailer.urls) {
-      await new Promise(r => setTimeout(r, 2000)); // 2s between requests
+      await new Promise(r => setTimeout(r, 500)); // 0.5s between requests
       const html = await fetchPage(url);
       if (!html) continue;
 
