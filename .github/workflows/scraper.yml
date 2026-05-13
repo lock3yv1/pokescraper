@@ -2,31 +2,28 @@ name: PokeScraper
 
 on:
   schedule:
-    # Runs every 10 minutes
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Allows you to run it manually for testing
+  workflow_dispatch: # Allows you to press "Run Workflow" manually
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 5 # Reduced to 5 as scraping shouldn't take longer
     
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # This enables automatic caching of your npm dependencies
-          cache: 'npm'
+          # Removed the cache line to prevent the "lock file not found" error
 
       - name: Install Dependencies
         run: |
           npm install
-          # Explicitly ensuring these exist even if not in package.json
-          npm install cheerio dotenv node-fetch
+          # Explicitly installing everything in case your package.json is incomplete
+          npm install cheerio axios dotenv node-fetch
 
       - name: Run Scraper
         env:
