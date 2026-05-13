@@ -7,19 +7,30 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const CHECK_INTERVAL = "*/10 * * * *";
 
 // ─── RETAIL REFERENCE PRICES (RRP / average market price) ──────────────────
-const RETAIL_PRICES = {
-  "booster box": 144.99,
-  "elite trainer box": 49.99,
-  "etb": 49.99,
-  "half box": 74.99,
-  "booster bundle": 24.99,
-  "booster pack": 4.49,
-  "mini tin": 8.99,
-  "collection box": 34.99,
-  "poster collection": 19.99,
-  "build and battle": 24.99,
-  "build & battle": 24.99,
-};
+const PRODUCTS = [
+  // Current & recent sets — English
+  "ascended heroes",
+  "destined rivals",
+  "journey together",
+  "prismatic evolutions",
+  "surging sparks",
+  "stellar crown",
+  "shrouded fable",
+  "twilight masquerade",
+  "temporal forces",
+  "paradox rift",
+  "obsidian flames",
+  "paldea evolved",
+  "scarlet violet base",
+  "151",
+  "lost origin",
+  "silver tempest",
+  "crown zenith",
+  "paldean fates",
+  "perfect order",
+  "black bolt",
+  "white flare",
+];
 
 function getRetailPrice(title) {
   const t = title.toLowerCase();
