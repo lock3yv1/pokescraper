@@ -322,27 +322,32 @@ const RETAILERS = [
   {
     name: "Total Cards", base: "https://totalcards.net",
     urls: [
-      "https://totalcards.net/search?q=pokemon+scarlet+violet+booster+box&type=product",
-      "https://totalcards.net/search?q=pokemon+sword+shield+booster+box&type=product",
+      // Search broad terms that return all sets at once
+      "https://totalcards.net/search?q=pokemon+booster+box&type=product",
       "https://totalcards.net/search?q=pokemon+elite+trainer+box&type=product",
+      "https://totalcards.net/search?q=pokemon+ascended+heroes&type=product",
+      "https://totalcards.net/search?q=pokemon+destined+rivals&type=product",
       "https://totalcards.net/search?q=pokemon+booster+bundle&type=product",
     ],
   },
   {
     name: "Titan Cards", base: "https://titancards.co.uk",
     urls: [
-      "https://titancards.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
+      "https://titancards.co.uk/search?q=pokemon+booster+box&type=product",
       "https://titancards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://titancards.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://titancards.co.uk/search?q=pokemon+destined+rivals&type=product",
       "https://titancards.co.uk/search?q=pokemon+half+box&type=product",
     ],
   },
   {
     name: "Eterna Cards", base: "https://eternacards.co.uk",
     urls: [
-      "https://eternacards.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+sword+shield+booster+box&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+half+booster+box&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+booster+box&type=product",
       "https://eternacards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+destined+rivals&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+half+booster+box&type=product",
     ],
   },
   {
@@ -350,33 +355,42 @@ const RETAILERS = [
     urls: [
       "https://packratt.co.uk/search?q=pokemon+booster+box&type=product",
       "https://packratt.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://packratt.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://packratt.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
     name: "Double Sleeved", base: "https://doublesleeved.co.uk",
     urls: [
-      "https://doublesleeved.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
-      "https://doublesleeved.co.uk/search?q=pokemon+sword+shield+booster+box&type=product",
+      "https://doublesleeved.co.uk/search?q=pokemon+booster+box&type=product",
       "https://doublesleeved.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://doublesleeved.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://doublesleeved.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
     name: "Toys N Geek", base: "https://www.toysngeek.co.uk",
     urls: [
-      "https://www.toysngeek.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
+      "https://www.toysngeek.co.uk/search?q=pokemon+booster+box&type=product",
       "https://www.toysngeek.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://www.toysngeek.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://www.toysngeek.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
     name: "The Card Vault", base: "https://thecardvault.co.uk",
     urls: [
       "https://thecardvault.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://thecardvault.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://thecardvault.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
     name: "My TCG", base: "https://mytcg.co.uk",
     urls: [
       "https://mytcg.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://mytcg.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://mytcg.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
@@ -384,13 +398,34 @@ const RETAILERS = [
     urls: [
       "https://gatheringgames.co.uk/search?q=pokemon+booster+box&type=product",
       "https://gatheringgames.co.uk/search?q=pokemon+elite+trainer+box&type=product",
+      "https://gatheringgames.co.uk/search?q=pokemon+ascended+heroes&type=product",
+      "https://gatheringgames.co.uk/search?q=pokemon+destined+rivals&type=product",
     ],
   },
   {
     name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",
     urls: [
-      "https://magicmadhouse.co.uk/search?q=pokemon+scarlet+violet+booster+box",
+      "https://magicmadhouse.co.uk/search?q=pokemon+booster+box",
       "https://magicmadhouse.co.uk/search?q=pokemon+elite+trainer+box",
+      "https://magicmadhouse.co.uk/search?q=pokemon+ascended+heroes",
+      "https://magicmadhouse.co.uk/search?q=pokemon+destined+rivals",
+    ],
+  },
+  {
+    name: "Zatu Games", base: "https://www.board-game.co.uk",
+    urls: [
+      "https://www.board-game.co.uk/search?q=pokemon+booster+box",
+      "https://www.board-game.co.uk/search?q=pokemon+elite+trainer+box",
+      "https://www.board-game.co.uk/search?q=pokemon+ascended+heroes",
+      "https://www.board-game.co.uk/search?q=pokemon+destined+rivals",
+    ],
+  },
+  {
+    name: "365 Games", base: "https://www.365games.co.uk",
+    urls: [
+      "https://www.365games.co.uk/search?q=pokemon+booster+box",
+      "https://www.365games.co.uk/search?q=pokemon+ascended+heroes",
+      "https://www.365games.co.uk/search?q=pokemon+destined+rivals",
     ],
   },
 ];
