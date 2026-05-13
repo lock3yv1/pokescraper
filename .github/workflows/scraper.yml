@@ -1,19 +1,28 @@
-name: PokeScraper Scan
+name: PokeScraper 2026 Pro
+
 on:
   schedule:
-    - cron: '*/30 * * * *' # Runs every 30 mins
-  workflow_dispatch: # Allows manual start
+    # Runs every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
-  build:
+  scrape:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup Node
-        uses: actions/setup-node@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-node-version: '20'
-      - run: npm install
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install cheerio
+
       - name: Run Scraper
         run: node index.js
         env:
