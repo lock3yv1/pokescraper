@@ -1,16 +1,8 @@
 {
-  "name": "pokescraper-2026",
+  "name": "pokescraper",
   "version": "1.0.0",
-  "description": "UK Pokemon TCG Market Scraper",
   "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "cheerio": "^1.0.0"
   }
 }
