@@ -9,10 +9,10 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // ─────────────────────────────────────────────
-// CONFIG
+// SETTINGS
 // ─────────────────────────────────────────────
 
-const SCAN_INTERVAL = 1000 * 60 * 5; // 5 mins
+const SCAN_INTERVAL = 1000 * 60 * 5;
 
 const notified = new Set();
 
@@ -22,7 +22,7 @@ const HEADERS = {
 };
 
 // ─────────────────────────────────────────────
-// PRODUCTS
+// SEARCH TERMS
 // ─────────────────────────────────────────────
 
 const SEARCH_TERMS = [
@@ -62,86 +62,132 @@ const SEARCH_TERMS = [
 ];
 
 // ─────────────────────────────────────────────
+// PRODUCT KEYWORDS
+// ─────────────────────────────────────────────
+
+const SEALED_KEYWORDS = [
+  "booster box",
+  "elite trainer box",
+  "etb",
+  "booster bundle",
+  "bundle",
+  "premium collection",
+  "ultra premium collection",
+  "upc",
+  "collection box",
+  "poster collection",
+  "tin",
+  "mini tin",
+  "build and battle",
+  "build & battle",
+  "league battle deck",
+];
+
+const EXCLUDED_KEYWORDS = [
+  // non pokemon
+  "yugioh",
+  "lorcana",
+  "one piece",
+  "digimon",
+  "magic the gathering",
+  "mtg",
+
+  // singles/accessories
+  "single",
+  "proxy",
+  "psa",
+  "bgs",
+  "cgc",
+  "slab",
+  "graded",
+  "playmat",
+  "binder",
+  "deck box",
+  "sleeves",
+  "dice",
+
+  // foreign
+  "japanese",
+  "jp",
+  "korean",
+  "chinese",
+];
+
+// ─────────────────────────────────────────────
 // RETAILERS
 // ─────────────────────────────────────────────
 
 const RETAILERS = [
   {
     name: "Total Cards",
-    url: (search) =>
-      `https://totalcards.net/search?q=${encodeURIComponent(search)}`,
+    url: q =>
+      `https://totalcards.net/search?q=${encodeURIComponent(q)}`,
 
-    parse: ($) => {
-      const items = [];
-
-      $(".product-item").each((_, el) => {
-        const title = $(el)
-          .find(".product-item__title")
-          .text()
-          .trim();
-
-        const priceText = $(el)
-          .find(".price")
-          .first()
-          .text()
-          .trim();
-
-        const link = $(el).find("a").attr("href");
-
-        const price = parseFloat(
-          priceText.replace(/[^0-9.]/g, "")
-        );
-
-        if (title && price) {
-          items.push({
-            title,
-            price,
-            url: `https://totalcards.net${link}`,
-          });
-        }
-      });
-
-      return items;
-    },
+    selector: ".product-item",
   },
 
   {
     name: "Chaos Cards",
+    url: q =>
+      `https://www.chaoscards.co.uk/search?q=${encodeURIComponent(q)}`,
 
-    url: (search) =>
-      `https://www.chaoscards.co.uk/search?q=${encodeURIComponent(search)}`,
+    selector: ".product-item",
+  },
 
-    parse: ($) => {
-      const items = [];
+  {
+    name: "Magic Madhouse",
+    url: q =>
+      `https://magicmadhouse.co.uk/search?q=${encodeURIComponent(q)}`,
 
-      $(".product-item").each((_, el) => {
-        const title = $(el)
-          .find("h3")
-          .text()
-          .trim();
+    selector: ".product-card",
+  },
 
-        const priceText = $(el)
-          .find(".price")
-          .text()
-          .trim();
+  {
+    name: "Titan Cards",
+    url: q =>
+      `https://titancards.co.uk/search?q=${encodeURIComponent(q)}`,
 
-        const link = $(el).find("a").attr("href");
+    selector: ".product-card",
+  },
 
-        const price = parseFloat(
-          priceText.replace(/[^0-9.]/g, "")
-        );
+  {
+    name: "Pokemon Center UK",
+    url: q =>
+      `https://www.pokemoncenter.com/en-gb/search?q=${encodeURIComponent(q)}`,
 
-        if (title && price) {
-          items.push({
-            title,
-            price,
-            url: `https://www.chaoscards.co.uk${link}`,
-          });
-        }
-      });
+    selector: "[class*=product]",
+  },
 
-      return items;
-    },
+  {
+    name: "Smyths",
+    url: q =>
+      `https://www.smythstoys.com/uk/en-gb/search/?text=${encodeURIComponent(q)}`,
+
+    selector: ".product-grid-item",
+  },
+
+  {
+    name: "Argos",
+    url: q =>
+      `https://www.argos.co.uk/search/${encodeURIComponent(q)}/`,
+
+    selector: "[data-test='component-product-card']",
+  },
+
+  {
+    name: "GAME",
+    url: q =>
+      `https://www.game.co.uk/search?q=${encodeURIComponent(q)}`,
+
+    selector: ".product",
+  },
+
+  {
+    name: "Very",
+    url: q =>
+      `https://www.very.co.uk/e/q/${encodeURIComponent(q)}.end`,
+
+    selector: "[data-testid='product-card']",
   },
 ];
 
@@ -149,36 +195,38 @@ const RETAILERS = [
 // HELPERS
 // ─────────────────────────────────────────────
 
-function matchesProduct(title, product) {
-  const lower = title.toLowerCase();
+function isPokemonProduct(title) {
+  const t = title.toLowerCase();
 
-  return product.keywords.every((k) =>
-    lower.includes(k.toLowerCase())
-  );
+  if (!t.includes("pokemon")) {
+    return false;
+  }
+
+  if (
+    EXCLUDED_KEYWORDS.some(k => t.includes(k))
+  ) {
+    return false;
+  }
+
+  if (
+    !SEALED_KEYWORDS.some(k => t.includes(k))
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
-function calculateProfit(buy, resell) {
-  const ebayFees = resell * 0.13;
-  return (resell - buy - ebayFees - 4).toFixed(2);
+function getPrice(text) {
+  if (!text) return null;
+
+  const cleaned = text.replace(/[^0-9.]/g, "");
+
+  return parseFloat(cleaned);
 }
-
-function getDealRating(price, rrp) {
-  const diff = ((price - rrp) / rrp) * 100;
-
-  if (diff <= -15) return "🔥 EXCELLENT";
-  if (diff <= -5) return "✅ GOOD";
-  if (diff <= 5) return "⚖️ FAIR";
-
-  return "❌ OVERPRICED";
-}
-
-// ─────────────────────────────────────────────
-// TELEGRAM
-// ─────────────────────────────────────────────
 
 async function sendTelegram(message) {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.log("Telegram not configured");
     return;
   }
 
@@ -189,7 +237,6 @@ async function sendTelegram(message) {
         chat_id: TELEGRAM_CHAT_ID,
         text: message,
         parse_mode: "HTML",
-        disable_web_page_preview: false,
       }
     );
   } catch (err) {
@@ -201,16 +248,12 @@ async function sendTelegram(message) {
 // SCRAPER
 // ─────────────────────────────────────────────
 
-async function scrapeRetailer(retailer, product) {
+async function scrapeRetailer(retailer, term) {
   try {
-    const searchQuery = product.name;
-
-    console.log(
-      `🔎 ${retailer.name} → ${searchQuery}`
-    );
+    console.log(`🔎 ${retailer.name} → ${term}`);
 
     const response = await axios.get(
-      retailer.url(searchQuery),
+      retailer.url(term),
       {
         headers: HEADERS,
         timeout: 15000,
@@ -219,11 +262,50 @@ async function scrapeRetailer(retailer, product) {
 
     const $ = cheerio.load(response.data);
 
-    const results = retailer.parse($);
+    const items = [];
 
-    return results.filter((r) =>
-      matchesProduct(r.title, product)
-    );
+    $(retailer.selector).each((_, el) => {
+      const title = $(el)
+        .find("h1,h2,h3,h4,a,.title,.product-title")
+        .first()
+        .text()
+        .trim();
+
+      const priceText = $(el)
+        .find(
+          ".price,.product-price,[class*=price]"
+        )
+        .first()
+        .text()
+        .trim();
+
+      const price = getPrice(priceText);
+
+      const link = $(el)
+        .find("a")
+        .first()
+        .attr("href");
+
+      if (!title || !price) {
+        return;
+      }
+
+      if (!isPokemonProduct(title)) {
+        return;
+      }
+
+      const url = link?.startsWith("http")
+        ? link
+        : `${new URL(retailer.url("")).origin}${link}`;
+
+      items.push({
+        title,
+        price,
+        url,
+      });
+    });
+
+    return items;
   } catch (err) {
     console.log(
       `❌ ${retailer.name}: ${err.message}`
@@ -238,17 +320,18 @@ async function scrapeRetailer(retailer, product) {
 // ─────────────────────────────────────────────
 
 async function runScan() {
-  console.log("\n🚀 Starting Scan...\n");
+  console.log("\n🚀 STARTING SCAN\n");
 
   for (const retailer of RETAILERS) {
-    for (const product of PRODUCTS) {
+    for (const term of SEARCH_TERMS) {
       const items = await scrapeRetailer(
         retailer,
-        product
+        term
       );
 
       for (const item of items) {
-        const uniqueKey = `${retailer.name}-${item.url}`;
+        const uniqueKey =
+          retailer.name + item.url;
 
         if (notified.has(uniqueKey)) {
           continue;
@@ -256,67 +339,57 @@ async function runScan() {
 
         notified.add(uniqueKey);
 
-        const profit = calculateProfit(
-          item.price,
-          product.resell
-        );
-
-        const rating = getDealRating(
-          item.price,
-          product.rrp
-        );
-
         const message = `
-${rating}
-
-<b>${item.title}</b>
+🚨 <b>POKEMON STOCK FOUND</b>
 
 🏪 ${retailer.name}
 
-💰 Price: £${item.price}
-📈 Resell: £${product.resell}
-💵 Profit: £${profit}
+📦 ${item.title}
 
-<a href="${item.url}">Buy Now</a>
+💰 £${item.price}
+
+<a href="${item.url}">BUY NOW</a>
 `;
 
-        console.log(message);
+        console.log(
+          `[FOUND] ${item.title} (£${item.price})`
+        );
 
         await sendTelegram(message);
 
-        await new Promise((r) =>
-          setTimeout(r, 1500)
+        await new Promise(r =>
+          setTimeout(r, 1200)
         );
       }
 
-      await new Promise((r) =>
-        setTimeout(r, 1000)
+      await new Promise(r =>
+        setTimeout(r, 800)
       );
     }
   }
 
-  console.log("\n✅ Scan Complete\n");
+  console.log("\n✅ SCAN COMPLETE\n");
 }
 
 // ─────────────────────────────────────────────
-// LOOP
+// START LOOP
 // ─────────────────────────────────────────────
 
 async function start() {
-  console.log("🚀 Lock3y's PokéScraper Running");
+  console.log("🚀 Lock3y's UK Pokémon Scanner");
 
   while (true) {
     try {
       await runScan();
     } catch (err) {
-      console.log("Fatal Scan Error:", err.message);
+      console.log("Fatal Error:", err.message);
     }
 
     console.log(
       `⏳ Waiting ${SCAN_INTERVAL / 60000} mins...\n`
     );
 
-    await new Promise((r) =>
+    await new Promise(r =>
       setTimeout(r, SCAN_INTERVAL)
     );
   }
