@@ -21,18 +21,31 @@ const RRP = {
   "deluxe pin collection": 34.99,
   "premier deck": 49.99,
   "display box": 299.99,
+  "league battle deck": 39.99,
+  "premium collection": 49.99,
+  "ultra premium collection": 119.99,
+  "upc": 119.99,
 };
 
 // ─── RESELL PRICES ─────────────────────────────────────────────────────────
 const RESELL = {
-  "ascended heroes booster box": 165,
+  // Mega Evolution era
   "ascended heroes elite trainer box": 65,
+  "ascended heroes etb": 65,
   "ascended heroes booster bundle": 38,
   "ascended heroes half box": 95,
+  "ascended heroes collection box": 45,
   "destined rivals booster box": 130,
   "destined rivals elite trainer box": 58,
   "destined rivals booster bundle": 32,
   "destined rivals half box": 80,
+  "perfect order booster box": 160,
+  "perfect order elite trainer box": 60,
+  "chaos rising booster box": 190,
+  "chaos rising elite trainer box": 70,
+  "phantasmal flames booster box": 280,
+  "phantasmal flames elite trainer box": 90,
+  // Scarlet & Violet era
   "journey together booster box": 120,
   "journey together elite trainer box": 52,
   "journey together booster bundle": 28,
@@ -58,8 +71,9 @@ const RESELL = {
   "151 booster box": 180,
   "151 booster bundle": 55,
   "151 elite trainer box": 70,
-  "perfect order booster box": 160,
+  // Sword & Shield era
   "evolving skies booster box": 800,
+  "evolving skies elite trainer box": 180,
   "brilliant stars booster box": 150,
   "fusion strike booster box": 145,
   "lost origin booster box": 130,
@@ -72,6 +86,9 @@ const RESELL = {
   "vivid voltage booster box": 150,
   "darkness ablaze booster box": 140,
   "hidden fates booster box": 400,
+  "hidden fates elite trainer box": 120,
+  "champion path elite trainer box": 200,
+  "cosmic eclipse booster box": 350,
 };
 
 // ─── SEALED KEYWORDS ───────────────────────────────────────────────────────
@@ -79,17 +96,19 @@ const SEALED_KEYWORDS = [
   "booster box", "elite trainer box", "etb", "half box",
   "booster bundle", "collection box", "poster collection",
   "build and battle", "build & battle", "pin collection",
-  "deluxe pin collection", "premier deck", "display box", "mini tins",
+  "deluxe pin collection", "premier deck", "display box",
+  "mini tins", "ultra premium collection", "upc",
+  "premium collection", "league battle deck",
 ];
 
 const EXCLUDE_KEYWORDS = [
   "yugioh", "yu-gi-oh", "magic the gathering", "mtg", "digimon",
   "one piece", "dragon ball", "lorcana", "flesh and blood",
-  "cardfight", "vanguard", "weiss", "buddyfight",
+  "cardfight", "vanguard", "weiss", "buddyfight", "gundam",
   "single", "holo", "full art", "secret rare", "graded",
-  "psa", "bgs", "cgc", "lot of", "proxy", "fake",
+  "psa", "bgs", "cgc", "lot of", "proxy", "fake", "replica",
   "sleeve", "sleeves", "deck box", "playmat", "binder",
-  "dice", "coin", "energy cards", "card lot",
+  "dice", "coin", "energy cards", "card lot", "bulk",
 ];
 
 function isSealedPokemon(title) {
@@ -135,31 +154,41 @@ const SCORE_LABELS = {
 
 // ─── SEARCH TERMS ──────────────────────────────────────────────────────────
 const SEARCH_TERMS = [
-  "pokemon tcg ascended heroes sealed",
-  "pokemon tcg destined rivals sealed",
-  "pokemon tcg journey together sealed",
-  "pokemon tcg prismatic evolutions sealed",
-  "pokemon tcg surging sparks sealed",
-  "pokemon tcg stellar crown sealed",
-  "pokemon tcg shrouded fable sealed",
-  "pokemon tcg twilight masquerade sealed",
-  "pokemon tcg temporal forces sealed",
-  "pokemon tcg paradox rift sealed",
-  "pokemon tcg obsidian flames sealed",
-  "pokemon tcg paldea evolved sealed",
-  "pokemon tcg 151 sealed",
-  "pokemon tcg paldean fates sealed",
-  "pokemon tcg perfect order sealed",
-  "pokemon tcg lost origin sealed",
-  "pokemon tcg silver tempest sealed",
-  "pokemon tcg crown zenith sealed",
-  "pokemon tcg evolving skies sealed",
-  "pokemon tcg brilliant stars sealed",
-  "pokemon tcg fusion strike sealed",
-  "pokemon tcg chilling reign sealed",
-  "pokemon tcg battle styles sealed",
-  "pokemon tcg shining fates sealed",
-  "pokemon tcg hidden fates sealed",
+  // Current Mega Evolution sets
+  "pokemon tcg ascended heroes",
+  "pokemon tcg destined rivals",
+  "pokemon tcg perfect order",
+  "pokemon tcg chaos rising",
+  "pokemon tcg phantasmal flames",
+  // Scarlet & Violet
+  "pokemon tcg journey together",
+  "pokemon tcg prismatic evolutions",
+  "pokemon tcg surging sparks",
+  "pokemon tcg stellar crown",
+  "pokemon tcg shrouded fable",
+  "pokemon tcg twilight masquerade",
+  "pokemon tcg temporal forces",
+  "pokemon tcg paradox rift",
+  "pokemon tcg obsidian flames",
+  "pokemon tcg paldea evolved",
+  "pokemon tcg 151",
+  "pokemon tcg paldean fates",
+  // Sword & Shield
+  "pokemon tcg evolving skies",
+  "pokemon tcg brilliant stars",
+  "pokemon tcg fusion strike",
+  "pokemon tcg lost origin",
+  "pokemon tcg silver tempest",
+  "pokemon tcg crown zenith",
+  "pokemon tcg astral radiance",
+  "pokemon tcg chilling reign",
+  "pokemon tcg battle styles",
+  "pokemon tcg shining fates",
+  "pokemon tcg hidden fates",
+  "pokemon tcg vivid voltage",
+  "pokemon tcg darkness ablaze",
+  "pokemon tcg champion path",
+  "pokemon tcg cosmic eclipse",
 ];
 
 // ─── RETAILERS ─────────────────────────────────────────────────────────────
@@ -372,6 +401,118 @@ const RETAILERS = [
       return items;
     },
   },
+  {
+    name: "My TCG",
+    searchUrl: (q) => `https://mytcg.co.uk/search?q=${encodeURIComponent(q)}&type=product`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-card, .grid__item, .card-wrapper").each((_, el) => {
+        const title = $(el).find("h3, h4, .card__heading, .product-title").first().text().trim();
+        const priceText = $(el).find(".price, .price__regular").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: `https://mytcg.co.uk${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "Evol Vault",
+    searchUrl: (q) => `https://evolvault.com/search?q=${encodeURIComponent(q)}&type=product`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-card, .grid__item, .card-wrapper").each((_, el) => {
+        const title = $(el).find("h3, h4, .card__heading").first().text().trim();
+        const priceText = $(el).find(".price, .price__regular").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: `https://evolvault.com${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "Evo Cards",
+    searchUrl: (q) => `https://evocards.co.uk/search?q=${encodeURIComponent(q)}&type=product`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-card, .grid__item, .card-wrapper").each((_, el) => {
+        const title = $(el).find("h3, h4, .card__heading").first().text().trim();
+        const priceText = $(el).find(".price, .price__regular").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: `https://evocards.co.uk${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "Forbidden Planet",
+    searchUrl: (q) => `https://forbiddenplanet.com/search/?q=${encodeURIComponent(q)}`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-list-item, .product-card, article").each((_, el) => {
+        const title = $(el).find("h2, h3, h4, .product-name").first().text().trim();
+        const priceText = $(el).find(".price, .product-price").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("out of stock") || $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: link?.startsWith("http") ? link : `https://forbiddenplanet.com${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "Gathering Games",
+    searchUrl: (q) => `https://gatheringgames.co.uk/search?q=${encodeURIComponent(q)}&type=product`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-card, .grid__item, .card-wrapper").each((_, el) => {
+        const title = $(el).find("h3, h4, .card__heading").first().text().trim();
+        const priceText = $(el).find(".price, .price__regular").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: `https://gatheringgames.co.uk${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "Pokemon Center UK",
+    searchUrl: (q) => `https://www.pokemoncenter.com/en-gb/search?q=${encodeURIComponent(q)}`,
+    parseResults: ($) => {
+      const items = [];
+      $(".product-card, .product-grid-item, [class*='product']").each((_, el) => {
+        const title = $(el).find("h2, h3, h4, [class*='title'], [class*='name']").first().text().trim();
+        const priceText = $(el).find("[class*='price']").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("out of stock") || $(el).text().toLowerCase().includes("sold out");
+        if (title && !soldOut && price) items.push({ title, price, url: link?.startsWith("http") ? link : `https://www.pokemoncenter.com${link}` });
+      });
+      return items;
+    },
+  },
+  {
+    name: "John Lewis",
+    searchUrl: (q) => `https://www.johnlewis.com/search?search-term=${encodeURIComponent(q + " pokemon")}`,
+    parseResults: ($) => {
+      const items = [];
+      $("[data-test='product-card'], .c-product-card").each((_, el) => {
+        const title = $(el).find("h2, h3, [data-test='product-title']").first().text().trim();
+        const priceText = $(el).find("[data-test='price-value'], .price").first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+        const link = $(el).find("a").first().attr("href");
+        const soldOut = $(el).text().toLowerCase().includes("out of stock");
+        if (title && !soldOut && price) items.push({ title, price, url: link?.startsWith("http") ? link : `https://www.johnlewis.com${link}` });
+      });
+      return items;
+    },
+  },
 ];
 
 const HEADERS = {
@@ -407,7 +548,7 @@ async function scrapeRetailer(retailer, term) {
 }
 
 async function runScan() {
-  console.log(`\n🔍 Scanning ${RETAILERS.length} retailers...`);
+  console.log(`\n🔍 Scanning ${RETAILERS.length} retailers across ${SEARCH_TERMS.length} sets...`);
   const findings = [];
 
   for (const term of SEARCH_TERMS) {
@@ -435,8 +576,7 @@ async function runScan() {
     const score = getDealScore(f.price, f.rrp);
     const vsRrp = Math.round(((f.price - f.rrp) / f.rrp) * 100);
     const vsResell = Math.round(((f.resell - f.price) / f.price) * 100);
-    const ebayFees = f.resell * 0.13;
-    const flipProfit = (f.resell - f.price - ebayFees - 4).toFixed(2);
+    const flipProfit = (f.resell - f.price - (f.resell * 0.13) - 4).toFixed(2);
 
     const msg = [
       SCORE_LABELS[score],
@@ -459,19 +599,17 @@ async function runScan() {
   if (findings.length === 0) {
     console.log("  ⬜ No confirmed findings this scan.");
   } else {
-    console.log(`\n✅ Sent ${findings.length} alerts.`);
+    console.log(`\n✅ Sent ${findings.length} Telegram alerts.`);
   }
 }
 
-// Run once and exit — GitHub Actions handles scheduling
-console.log("🚀 Lock3y's PokéScraper — Single Run");
-console.log(`🏪 ${RETAILERS.length} retailers · ${SEARCH_TERMS.length} sets`);
-console.log(`✅ Sealed products only · Full 3-way price comparison\n`);
+console.log("🚀 Lock3y's PokéScraper");
+console.log(`🏪 ${RETAILERS.length} retailers · ${SEARCH_TERMS.length} sets · Sealed only\n`);
 
 runScan().then(() => {
-  console.log("✅ Scan complete. Exiting.");
+  console.log("✅ Done. Exiting.");
   process.exit(0);
 }).catch(e => {
-  console.error("Fatal error:", e.message);
+  console.error("Fatal:", e.message);
   process.exit(1);
 });
