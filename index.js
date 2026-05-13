@@ -34,14 +34,15 @@ const RESELL = {
   "ninja spinner booster box": 150, "heat wave arena booster box": 180, "mega dream ex booster box": 160
 };
 
-const SETS = ["ascended heroes","destined rivals","perfect order","chaos rising","phantasmal flames","journey together","prismatic evolutions","surging sparks","stellar crown","temporal forces","paradox rift","obsidian flames","151","evolving skies","brilliant stars","fusion strike","lost origin","silver tempest","crown zenith","chilling reign","battle styles","shining fates","hidden fates","ninja spinner","heat wave arena","mega dream ex","mega evolution"];
-const PRODUCT_KEYWORDS = ["booster box","elite trainer box","etb","booster bundle","booster pack","collection box","tin","blister","premium collection","special collection","upc"];
-const EXCLUDE = ["yugioh","yu-gi-oh","mtg","magic","lorcana","single","graded","psa","sleeve","playmat","binder","japanese","jp"];
+const PRODUCT_KEYWORDS = ["booster box","elite trainer box","etb","booster bundle","booster pack","collection box","tin","blister","upc"];
+const EXCLUDE = ["yugioh","mtg","magic","lorcana","single","graded","psa","sleeve","playmat","binder","japanese","jp","cn","korean"];
 
 function isValid(title) {
   const t = title.toLowerCase();
   if (EXCLUDE.some(k => t.includes(k))) return false;
-  return SETS.some(s => t.includes(s)) && PRODUCT_KEYWORDS.some(k => t.includes(k));
+  const isPokemon = t.includes("pokemon") || t.includes("pokémon");
+  const isSealed = PRODUCT_KEYWORDS.some(k => t.includes(k));
+  return isPokemon && isSealed;
 }
 
 function getMatch(title, list) {
@@ -56,7 +57,7 @@ function getMatch(title, list) {
 async function fetchPage(url) {
   try {
     const res = await fetch(url, { 
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" } 
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } 
     });
     return res.ok ? await res.text() : null;
   } catch { return null; }
@@ -65,7 +66,7 @@ async function fetchPage(url) {
 function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
-  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4").each((_, el) => {
+  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4, .product-grid-item").each((_, el) => {
     const title = $(el).find("h2, h3, h4, .product-title, .title, .name").first().text().replace(/\s+/g, ' ').trim();
     const priceText = $(el).find("[class*='price'], .amount, .current-price").first().text().replace(/[^0-9.]/g, "");
     const price = parseFloat(priceText);
@@ -79,42 +80,47 @@ function extractProducts(html, baseUrl) {
 }
 
 const RETAILERS = [
-  { name: "Miniso", base: "https://minisouk.com", url: "https://minisouk.com/search?q=pokemon&sort_by=created-descending" },
-  { name: "Total Cards", base: "https://totalcards.net", url: "https://totalcards.net/search?q=pokemon+sealed&sort=created-descending" },
-  { name: "Japan2UK", base: "https://japan2uk.com", url: "https://japan2uk.com/search?q=pokemon+english&sort_by=created-descending" },
-  { name: "Titan Cards", base: "https://titancards.co.uk", url: "https://titancards.co.uk/search?q=pokemon+sealed&sort_by=created-descending" },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", url: "https://doublesleeved.co.uk/search?q=pokemon&sort_by=created-descending" },
-  { name: "The Card Vault", base: "https://thecardvault.co.uk", url: "https://thecardvault.co.uk/search?q=pokemon+sealed&sort_by=created-descending" },
-  { name: "Cosmic Col.", base: "https://cosmiccollectables.co.uk", url: "https://cosmiccollectables.co.uk/search?q=pokemon&sort_by=created-descending" },
-  { name: "My TCG", base: "https://mytcg.co.uk", url: "https://mytcg.co.uk/search?q=pokemon+sealed&sort_by=created-descending" }
+  { name: "Miniso", base: "https://minisouk.com", queries: ["pokemon+sealed", "pokemon+151"] },
+  { name: "Total Cards", base: "https://totalcards.net", queries: ["pokemon+booster+box", "pokemon+151"] },
+  { name: "Japan2UK", base: "https://japan2uk.com", queries: ["pokemon+english+sealed", "pokemon+booster+bundle"] },
+  { name: "Titan Cards", base: "https://titancards.co.uk", queries: ["pokemon+sealed", "pokemon+etb"] },
+  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", queries: ["pokemon+tcg", "pokemon+151"] },
+  { name: "The Card Vault", base: "https://thecardvault.co.uk", queries: ["pokemon+sealed", "pokemon+booster"] },
+  { name: "My TCG", base: "https://mytcg.co.uk", queries: ["pokemon+sealed", "pokemon+bundle"] }
 ];
 
 const notified = new Set();
 
 async function runScan() {
-  console.log(`🔍 BROAD SEARCH Started: ${new Date().toLocaleTimeString()}`);
+  console.log(`🔍 DEEP SCAN Started: ${new Date().toLocaleTimeString()}`);
   for (const shop of RETAILERS) {
-    const html = await fetchPage(shop.url);
-    if (!html) { console.log(`  → ${shop.name} (Check failed)`); continue; }
-    const items = extractProducts(html, shop.base);
-    console.log(`  → ${shop.name} (${items.length} items scanned)`);
-    for (const item of items) {
-      if (isValid(item.title)) {
-        const rrp = getMatch(item.title, RRP);
-        const resell = getMatch(item.title, RESELL);
-        if (rrp && resell && !notified.has(item.url)) {
-          notified.add(item.url);
-          const diff = Math.round(((item.price - rrp) / rrp) * 100);
-          const flip = (resell - item.price - (resell * 0.13) - 4).toFixed(2);
-          const score = diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
+    for (const q of shop.queries) {
+      const url = `${shop.base}/search?q=${q}`;
+      const html = await fetchPage(url);
+      if (!html) continue;
+      
+      const items = extractProducts(html, shop.base);
+      console.log(`  → ${shop.name} (${q}): ${items.length} items`);
+      
+      for (const item of items) {
+        if (isValid(item.title) && !notified.has(item.url)) {
+          const rrp = getMatch(item.title, RRP);
+          const resell = getMatch(item.title, RESELL);
           
-          const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${rrp.toFixed(2)} (${diff > 0 ? "+" : ""}${diff}%)\n📈 RESELL: £${resell.toFixed(2)}\n🏷️ FLIP: £${flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
-          
-          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
-          });
+          if (rrp && resell) {
+            notified.add(item.url);
+            const diff = Math.round(((item.price - rrp) / rrp) * 100);
+            const flip = (resell - item.price - (resell * 0.13) - 4).toFixed(2);
+            const score = diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
+            
+            const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${rrp.toFixed(2)} (${diff > 0 ? "+" : ""}${diff}%)\n📈 RESELL: £${resell.toFixed(2)}\n🏷️ FLIP: £${flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
+            
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
+              method: "POST", 
+              headers: { "Content-Type": "application/json" }, 
+              body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
+            });
+          }
         }
       }
     }
