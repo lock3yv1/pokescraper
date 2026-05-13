@@ -1,6 +1,7 @@
 {
-  "name": "lock3ys-pokescraper",
-  "version": "2.0.0",
+  "name": "pokescraper",
+  "version": "1.0.0",
+  "description": "Lock3y's Den - UK Pokemon TCG scraper",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
