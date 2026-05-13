@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const cheerio = require("cheerio");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
