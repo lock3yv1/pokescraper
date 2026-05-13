@@ -98,56 +98,119 @@ function dealScore(buy, rrp) {
   return "❌ OVERPRICED";
 }
 
-// Use native fetch with AbortController — guaranteed timeout
-async function fetchPage(url, timeoutMs = 8000) {
+async function fetchPage(url, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
       }
     });
     clearTimeout(timer);
+    if (!res.ok) {
+      console.log(`    HTTP ${res.status} for ${url}`);
+      return null;
+    }
     return await res.text();
   } catch (e) {
     clearTimeout(timer);
-    console.log(`  ⏭ ${url.split("/")[2]}: ${e.message.slice(0,40)}`);
+    console.log(`    Timeout/error: ${e.message.slice(0,50)}`);
     return null;
   }
 }
 
-function parseShopify(html, baseUrl) {
+// Try multiple CSS selector strategies
+function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
-  $(".product-card, .grid__item, .card-wrapper, .product-item").each((_, el) => {
-    const title = $(el).find("h2,h3,h4,.card__heading,.product-item__title,.product-title").first().text().trim();
-    const priceText = $(el).find(".price,.price__regular,.product-price").first().text().trim();
-    const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
-    const link = $(el).find("a[href]").first().attr("href");
-    const soldOut = $(el).text().toLowerCase().includes("sold out");
-    if (title && !soldOut && price > 0 && link) {
-      items.push({ title, price, url: link.startsWith("http") ? link : `${baseUrl}${link}` });
-    }
+
+  // Strategy 1: JSON-LD structured data (most reliable)
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).html());
+      const products = data["@type"] === "ItemList" ? data.itemListElement :
+                       data["@type"] === "Product" ? [data] : [];
+      for (const p of products) {
+        const item = p.item || p;
+        const title = item.name;
+        const price = parseFloat(item.offers?.price || item.offers?.lowPrice || 0);
+        const url = item.url || item["@id"];
+        const inStock = !item.offers?.availability?.includes("OutOfStock");
+        if (title && price > 0 && url && inStock) {
+          items.push({ title, price, url: url.startsWith("http") ? url : `${baseUrl}${url}` });
+        }
+      }
+    } catch {}
   });
+
+  if (items.length > 0) return items;
+
+  // Strategy 2: Common product grid selectors
+  const selectors = [
+    ".product-item",
+    ".product-card",
+    ".grid__item",
+    ".card-wrapper",
+    "[data-product-id]",
+    ".boost-pfs-filter-products article",
+    ".collection-product-card",
+    "li.grid__item",
+    ".product",
+  ];
+
+  for (const sel of selectors) {
+    $(sel).each((_, el) => {
+      const titleEl = $(el).find("h2, h3, h4, .card__heading, .product-item__title, .product-title, .product-name, a[aria-label]").first();
+      const title = titleEl.text().trim() || titleEl.attr("aria-label") || "";
+      const priceText = $(el).find(".price, .price__regular, .price__sale, [class*='price']").first().text().trim();
+      const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+      const link = $(el).find("a[href]").first().attr("href");
+      const soldOut = $(el).text().toLowerCase().includes("sold out") || 
+                      $(el).find("[class*='sold'], [class*='unavailable']").length > 0;
+
+      if (title && !soldOut && price > 0 && link) {
+        items.push({ title, price, url: link.startsWith("http") ? link : `${baseUrl}${link}` });
+      }
+    });
+    if (items.length > 0) break;
+  }
+
+  // Strategy 3: Look for product links with prices anywhere on page
+  if (items.length === 0) {
+    $("a[href*='/products/']").each((_, el) => {
+      const title = $(el).text().trim() || $(el).attr("aria-label") || "";
+      const parent = $(el).closest("li, article, div.product, div.item");
+      const priceText = parent.find("[class*='price']").first().text().trim();
+      const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
+      if (title && price > 0) {
+        const href = $(el).attr("href");
+        items.push({ title, price, url: href.startsWith("http") ? href : `${baseUrl}${href}` });
+      }
+    });
+  }
+
   return items;
 }
 
-// Only most reliable Shopify-based UK retailers
+// Use search URLs which are more reliable than category pages
 const RETAILERS = [
-  { name: "Total Cards",    base: "https://totalcards.net",           pages: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes"] },
-  { name: "Titan Cards",    base: "https://titancards.co.uk",         pages: ["/collections/pokemon-sealed-products"] },
-  { name: "Eterna Cards",   base: "https://eternacards.co.uk",        pages: ["/collections/pokemon-tcg-sealed-products"] },
-  { name: "PACKRAT",        base: "https://packratt.co.uk",           pages: ["/collections/pokemon"] },
-  { name: "Big Orbit",      base: "https://www.bigorbitcards.co.uk",  pages: ["/collections/pokemon-sealed"] },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk",      pages: ["/collections/pokemon"] },
-  { name: "Toys N Geek",    base: "https://www.toysngeek.co.uk",      pages: ["/collections/pokemon"] },
-  { name: "The Card Vault", base: "https://thecardvault.co.uk",       pages: ["/collections/pokemon-tcg-sealed-products"] },
-  { name: "My TCG",         base: "https://mytcg.co.uk",              pages: ["/collections/pokemon"] },
-  { name: "Gathering Games",base: "https://gatheringgames.co.uk",     pages: ["/collections/pokemon"] },
+  { name: "Total Cards",     base: "https://totalcards.net",          url: "https://totalcards.net/search?q=pokemon+booster+box+etb&type=product" },
+  { name: "Titan Cards",     base: "https://titancards.co.uk",        url: "https://titancards.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "Eterna Cards",    base: "https://eternacards.co.uk",       url: "https://eternacards.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "PACKRAT",         base: "https://packratt.co.uk",          url: "https://packratt.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "Big Orbit",       base: "https://www.bigorbitcards.co.uk", url: "https://www.bigorbitcards.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "Double Sleeved",  base: "https://doublesleeved.co.uk",     url: "https://doublesleeved.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "Toys N Geek",     base: "https://www.toysngeek.co.uk",     url: "https://www.toysngeek.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "The Card Vault",  base: "https://thecardvault.co.uk",      url: "https://thecardvault.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "My TCG",          base: "https://mytcg.co.uk",             url: "https://mytcg.co.uk/search?q=pokemon+booster+box&type=product" },
+  { name: "Chaos Cards",     base: "https://www.chaoscards.co.uk",    url: "https://www.chaoscards.co.uk/search?q=pokemon+booster+box" },
+  { name: "Magic Madhouse",  base: "https://magicmadhouse.co.uk",     url: "https://magicmadhouse.co.uk/search?q=pokemon+booster+box" },
 ];
 
 const notified = new Set();
@@ -160,10 +223,10 @@ async function sendTelegram(msg) {
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML", disable_web_page_preview: false }),
     });
     const data = await res.json();
-    if (data.ok) console.log("  📱 Sent!");
-    else console.log("  ❌ Telegram error:", data.description);
+    if (data.ok) console.log("    📱 Sent!");
+    else console.log("    ❌ Telegram:", data.description);
   } catch (e) {
-    console.log("  ❌ Telegram:", e.message);
+    console.log("    ❌ Telegram:", e.message);
   }
 }
 
@@ -173,30 +236,31 @@ async function runScan() {
 
   for (const retailer of RETAILERS) {
     process.stdout.write(`  → ${retailer.name} ... `);
-    let count = 0;
+    
+    const html = await fetchPage(retailer.url);
+    if (!html) { console.log("failed"); continue; }
 
-    for (const path of retailer.pages) {
-      const html = await fetchPage(`${retailer.base}${path}`);
-      if (!html) continue;
+    const items = extractProducts(html, retailer.base);
+    console.log(`${items.length} items scraped`);
 
-      const items = parseShopify(html, retailer.base);
-      for (const item of items) {
-        if (!isValid(item.title)) continue;
-        const rrp = getRRP(item.title);
-        const resell = getResell(item.title);
-        if (!rrp || !resell) continue;
-        const key = `${retailer.name}::${item.url}`;
-        if (!notified.has(key)) {
-          notified.add(key);
-          findings.push({ ...item, retailer: retailer.name, rrp, resell });
-          count++;
-        }
+    // Debug: show first few items found
+    items.slice(0,3).forEach(item => console.log(`    📄 "${item.title}" £${item.price}`));
+
+    for (const item of items) {
+      if (!isValid(item.title)) continue;
+      const rrp = getRRP(item.title);
+      const resell = getResell(item.title);
+      if (!rrp || !resell) continue;
+      const key = `${retailer.name}::${item.url}`;
+      if (!notified.has(key)) {
+        notified.add(key);
+        findings.push({ ...item, retailer: retailer.name, rrp, resell });
+        console.log(`    🟢 MATCH: ${item.title} — £${item.price}`);
       }
     }
-    console.log(`${count} found`);
   }
 
-  console.log(`\n📊 Total: ${findings.length} new confirmed deals`);
+  console.log(`\n📊 Total confirmed deals: ${findings.length}`);
 
   for (const f of findings) {
     const score = dealScore(f.price, f.rrp);
@@ -222,9 +286,7 @@ async function runScan() {
   if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
 }
 
-console.log("🚀 Lock3y's PokéScraper");
-console.log("⚡ Native fetch + AbortController — guaranteed timeouts\n");
-
+console.log("🚀 Lock3y's PokéScraper — Debug Mode");
 runScan()
   .then(() => { console.log("\n✅ Done."); process.exit(0); })
   .catch(e => { console.error("Fatal:", e.message); process.exit(1); });
