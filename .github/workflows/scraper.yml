@@ -17,20 +17,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Verify Files
-        run: ls -R # Logs exactly what files are in your repo for debugging
-
       - name: Install Dependencies
-        run: npm install node-fetch cheerio
+        run: npm install node-fetch
 
       - name: Run Scraper
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ -f index.js ]; then
-            node index.js
-          else
-            echo "::error::index.js not found! Ensure it is in the root directory."
-            exit 1
-          fi
+          node index.js
+          sleep 5 # Ensures Telegram requests finish before the runner kills the job
