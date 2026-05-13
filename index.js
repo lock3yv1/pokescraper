@@ -3,21 +3,19 @@ const cheerio = require("cheerio");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// ─── ACCURATE RRP TABLE ────────────────────────────────────────────────────
-// These are OFFICIAL Pokemon UK retail prices
+// ─── RRP TABLE ─────────────────────────────────────────────────────────────
 const RRP = {
-  "booster box": 144.99,       // 36 packs
-  "half booster box": 74.99,   // 18 packs
+  "booster box": 144.99,
+  "half booster box": 74.99,
   "half box": 74.99,
   "elite trainer box": 49.99,
   "etb": 49.99,
-  "booster bundle": 24.99,     // 6 packs
-  "booster pack": 4.49,        // single pack
+  "booster bundle": 24.99,
+  "booster pack": 4.49,
   "mini tins": 44.99,
   "collection box": 34.99,
   "poster collection": 19.99,
   "build and battle": 24.99,
-  "build & battle": 24.99,
   "pin collection": 34.99,
   "deluxe pin collection": 34.99,
   "premier deck": 49.99,
@@ -26,32 +24,29 @@ const RRP = {
   "league battle deck": 39.99,
   "tin": 24.99,
   "blister": 12.99,
-  "3 pack blister": 14.99,
 };
 
-// ─── RESELL PRICES (eBay UK SOLD listings - current market) ───────────────
-const RESELL = {
-  // Current sets - Mega Evolution era
+// ─── MARKET PRICES (eBay UK SOLD listings) ─────────────────────────────────
+const MARKET = {
   "ascended heroes elite trainer box": 62,
   "ascended heroes etb": 62,
   "ascended heroes booster bundle": 35,
+  "ascended heroes half booster box": 90,
   "ascended heroes half box": 90,
   "ascended heroes booster pack": 6.00,
   "destined rivals booster box": 125,
   "destined rivals elite trainer box": 55,
   "destined rivals booster bundle": 30,
+  "destined rivals half booster box": 75,
   "destined rivals half box": 75,
   "destined rivals booster pack": 5.00,
   "perfect order booster box": 155,
   "perfect order elite trainer box": 58,
-  "perfect order booster pack": 6.50,
   "chaos rising booster box": 185,
   "chaos rising elite trainer box": 68,
-  "chaos rising booster pack": 7.50,
   "phantasmal flames booster box": 270,
   "phantasmal flames elite trainer box": 85,
   "phantasmal flames booster pack": 11.00,
-  // Scarlet & Violet
   "journey together booster box": 115,
   "journey together elite trainer box": 50,
   "journey together booster bundle": 26,
@@ -68,17 +63,13 @@ const RESELL = {
   "surging sparks booster pack": 6.00,
   "stellar crown booster box": 185,
   "stellar crown elite trainer box": 62,
-  "stellar crown booster pack": 7.00,
   "shrouded fable booster box": 105,
-  "shrouded fable booster pack": 4.80,
   "twilight masquerade booster box": 125,
   "twilight masquerade elite trainer box": 52,
-  "twilight masquerade booster pack": 5.20,
   "temporal forces booster box": 110,
   "temporal forces elite trainer box": 50,
   "temporal forces half booster box": 62,
   "temporal forces half box": 62,
-  "temporal forces booster pack": 4.80,
   "paradox rift booster box": 115,
   "paradox rift elite trainer box": 52,
   "paradox rift half booster box": 65,
@@ -86,135 +77,152 @@ const RESELL = {
   "paradox rift booster pack": 4.80,
   "obsidian flames booster box": 125,
   "obsidian flames elite trainer box": 55,
-  "obsidian flames booster pack": 5.20,
   "paldea evolved booster box": 95,
-  "paldea evolved booster pack": 4.30,
   "paldean fates booster box": 135,
-  "paldean fates booster pack": 5.80,
   "scarlet violet booster box": 105,
-  "scarlet violet booster pack": 4.80,
   "151 booster box": 175,
   "151 booster bundle": 52,
   "151 elite trainer box": 68,
   "151 booster pack": 7.50,
-  // Sword & Shield
   "crown zenith booster box": 135,
   "crown zenith elite trainer box": 62,
-  "crown zenith booster pack": 5.20,
   "silver tempest booster box": 120,
-  "silver tempest booster pack": 4.80,
   "lost origin booster box": 125,
-  "lost origin booster pack": 5.20,
   "astral radiance booster box": 125,
-  "astral radiance booster pack": 5.20,
   "brilliant stars booster box": 145,
   "brilliant stars elite trainer box": 58,
-  "brilliant stars booster pack": 5.80,
   "fusion strike booster box": 140,
   "fusion strike elite trainer box": 52,
-  "fusion strike booster pack": 5.20,
   "evolving skies booster box": 790,
   "evolving skies elite trainer box": 175,
   "evolving skies booster pack": 27.00,
   "chilling reign booster box": 155,
-  "chilling reign elite trainer box": 62,
-  "chilling reign booster pack": 6.20,
   "battle styles booster box": 175,
-  "battle styles booster pack": 6.80,
   "shining fates booster box": 245,
   "shining fates elite trainer box": 115,
-  "shining fates booster pack": 9.50,
   "vivid voltage booster box": 145,
-  "vivid voltage booster pack": 5.80,
   "darkness ablaze booster box": 135,
-  "darkness ablaze booster pack": 5.20,
   "rebel clash booster box": 125,
-  "rebel clash booster pack": 4.80,
-  "sword shield booster box": 195,
-  "sword & shield booster box": 195,
-  // Older
   "hidden fates booster box": 390,
   "hidden fates elite trainer box": 115,
   "hidden fates booster pack": 14.00,
   "cosmic eclipse booster box": 340,
-  "cosmic eclipse booster pack": 13.50,
+  "champions path elite trainer box": 195,
   "unified minds booster box": 245,
   "unbroken bonds booster box": 275,
-  "team up booster box": 215,
-  "champions path elite trainer box": 195,
 };
 
-// ─── MUST be English sealed Pokemon product ────────────────────────────────
-const PRODUCT_KEYWORDS = [
+// ─── VALID ENGLISH POKEMON SETS ────────────────────────────────────────────
+const ENGLISH_SETS = [
+  "ascended heroes", "destined rivals", "perfect order", "chaos rising", "phantasmal flames",
+  "journey together", "prismatic evolutions", "surging sparks", "stellar crown",
+  "shrouded fable", "twilight masquerade", "temporal forces", "paradox rift",
+  "obsidian flames", "paldea evolved", "paldean fates", "scarlet & violet",
+  "scarlet and violet", "151", "crown zenith", "silver tempest", "lost origin",
+  "astral radiance", "brilliant stars", "fusion strike", "evolving skies",
+  "chilling reign", "battle styles", "shining fates", "vivid voltage",
+  "champions path", "darkness ablaze", "rebel clash", "sword & shield",
+  "hidden fates", "cosmic eclipse", "unified minds", "unbroken bonds",
+  "team up", "lost thunder", "celestial storm", "forbidden light",
+  "ultra prism", "burning shadows", "guardians rising", "sun & moon",
+];
+
+// ─── SEALED PRODUCT TYPES ──────────────────────────────────────────────────
+const PRODUCT_TYPES = [
   "booster box", "elite trainer box", "etb", "half booster box", "half box",
   "booster bundle", "booster pack", "collection box", "poster collection",
-  "build and battle", "build & battle", "pin collection",
-  "deluxe pin collection", "premier deck", "ultra premium collection",
-  "league battle deck", "tin", "blister", "mini tins",
+  "build and battle", "build & battle", "pin collection", "deluxe pin collection",
+  "premier deck", "ultra premium collection", "league battle deck",
+  "tin", "blister", "mini tins",
 ];
 
-// ─── BLOCK these ───────────────────────────────────────────────────────────
-const EXCLUDE = [
-  // Other card games
+// ─── HARD BLOCK ────────────────────────────────────────────────────────────
+const BLOCK = [
+  // Other languages
+  "korean", "japanese", "simplified chinese", "traditional chinese",
+  "gem pack", "sv3a", "sv4a", "sv5k", "sv6a", "sv7", "sv8", "sv9",
+  // Other games
   "yugioh", "yu-gi-oh", "magic the gathering", "mtg", "digimon",
   "one piece", "dragon ball", "lorcana", "cardfight", "vanguard",
-  "weiss", "buddyfight", "gundam", "naruto", "fortnite",
-  // Non-English
-  "korean", "japanese", "japanese pokemon", "japanese tcg",
-  "simplified chinese", "traditional chinese", "sv3a", "sv4a",
-  "sv5k", "sv6", "sv6a", "sv7", "sv8", "sv9",
-  // Not sealed product
-  "single", "graded", "psa", "bgs", "cgc", "lot of", "proxy",
-  "fake", "sleeve", "playmat", "binder", "dice", "bulk", "funko",
-  "plush", "figure", "card lot", "common", "uncommon",
-  "holo", "reverse holo", "full art", "secret rare",
+  "weiss", "buddyfight", "gundam", "naruto", "flesh and blood",
+  // Not a product
+  "code card", "online code", "live code", "single", "graded",
+  "psa", "bgs", "cgc", "lot of", "proxy", "fake",
+  "sleeve", "playmat", "binder", "dice", "bulk", "funko", "plush",
+  "etb case", "booster box case", "case of",
 ];
 
-function isValidProduct(title) {
+// ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
+const PRICE_LIMITS = {
+  "booster pack": { min: 1, max: 50 },
+  "booster box": { min: 30, max: 1500 },
+  "half box": { min: 20, max: 400 },
+  "half booster box": { min: 20, max: 400 },
+  "elite trainer box": { min: 20, max: 400 },
+  "etb": { min: 20, max: 400 },
+  "booster bundle": { min: 10, max: 200 },
+  "tin": { min: 5, max: 100 },
+  "default": { min: 1, max: 1500 },
+};
+
+function getPriceLimits(title) {
+  const t = title.toLowerCase();
+  for (const [key, limits] of Object.entries(PRICE_LIMITS)) {
+    if (t.includes(key)) return limits;
+  }
+  return PRICE_LIMITS.default;
+}
+
+function isValidProduct(title, price) {
   const t = title.toLowerCase();
   if (!t.includes("pokemon")) return false;
-  if (EXCLUDE.some(k => t.includes(k))) return false;
-  if (!PRODUCT_KEYWORDS.some(k => t.includes(k))) return false;
+  if (BLOCK.some(k => t.includes(k))) return false;
+  if (!PRODUCT_TYPES.some(k => t.includes(k))) return false;
+  if (!ENGLISH_SETS.some(s => t.includes(s))) return false;
+  const limits = getPriceLimits(title);
+  if (price < limits.min || price > limits.max) return false;
   return true;
 }
 
 function getRRP(title) {
   const t = title.toLowerCase();
-  // Match longest key first for accuracy
   const sorted = Object.entries(RRP).sort((a, b) => b[0].length - a[0].length);
   for (const [k, v] of sorted) if (t.includes(k)) return v;
   return null;
 }
 
-function getResell(title) {
+function getMarket(title) {
   const t = title.toLowerCase();
-  const sorted = Object.entries(RESELL).sort((a, b) => b[0].length - a[0].length);
+  const sorted = Object.entries(MARKET).sort((a, b) => b[0].length - a[0].length);
   for (const [k, v] of sorted) if (t.includes(k)) return v;
   return null;
 }
 
-function getDealRating(buy, rrp, resell) {
-  // Rate against MARKET price (resell), not just RRP
-  // This is more accurate — if something sells for less than eBay it's a deal
-  const vsRrp = ((buy - rrp) / rrp) * 100;
-  const vsMarket = resell ? ((buy - resell) / resell) * 100 : null;
-
-  // If it's cheaper than eBay market — that's the real deal signal
-  if (vsMarket !== null && vsMarket <= -15) return "🔥 EXCELLENT DEAL";
-  if (vsMarket !== null && vsMarket <= -5)  return "✅ GOOD DEAL";
-  if (vsMarket !== null && vsMarket <= 5)   return "⚖️ AT MARKET PRICE";
-  if (vsMarket !== null && vsMarket > 5)    return "⚠️ ABOVE MARKET";
-  // Fallback to RRP comparison
-  if (vsRrp <= -15) return "🔥 EXCELLENT DEAL";
-  if (vsRrp <= -5)  return "✅ GOOD DEAL";
-  if (vsRrp <= 5)   return "⚖️ FAIR PRICE";
-  if (vsRrp <= 20)  return "⚠️ SLIGHTLY OVERPRICED";
-  return "❌ OVERPRICED";
+function getDealRating(buy, rrp, market) {
+  // Rate vs MARKET price primarily
+  if (market) {
+    const d = ((buy - market) / market) * 100;
+    if (d <= -20) return { label: "🔥 EXCELLENT DEAL", stars: "⭐⭐⭐⭐⭐" };
+    if (d <= -10) return { label: "✅ GOOD DEAL", stars: "⭐⭐⭐⭐" };
+    if (d <= 0)   return { label: "⚖️ AT MARKET", stars: "⭐⭐⭐" };
+    if (d <= 15)  return { label: "⚠️ ABOVE MARKET", stars: "⭐⭐" };
+    return { label: "❌ OVERPRICED", stars: "⭐" };
+  }
+  // Fallback to RRP
+  if (rrp) {
+    const d = ((buy - rrp) / rrp) * 100;
+    if (d <= -15) return { label: "🔥 EXCELLENT DEAL", stars: "⭐⭐⭐⭐⭐" };
+    if (d <= -5)  return { label: "✅ GOOD DEAL", stars: "⭐⭐⭐⭐" };
+    if (d <= 5)   return { label: "⚖️ FAIR PRICE", stars: "⭐⭐⭐" };
+    if (d <= 20)  return { label: "⚠️ SLIGHTLY OVERPRICED", stars: "⭐⭐" };
+    return { label: "❌ OVERPRICED", stars: "⭐" };
+  }
+  return { label: "📦 IN STOCK", stars: "" };
 }
 
 async function fetchPage(url, ms = 10000) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), ms);
+  const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
@@ -223,72 +231,88 @@ async function fetchPage(url, ms = 10000) {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
         "Cache-Control": "no-cache",
+        "Referer": "https://www.google.com/",
       }
     });
-    clearTimeout(t);
-    if (!res.ok) { console.log(`    HTTP ${res.status}`); return null; }
+    clearTimeout(timer);
+    if (!res.ok) { console.log(`    HTTP ${res.status} — skipping`); return null; }
     return await res.text();
   } catch (e) {
-    clearTimeout(t);
-    console.log(`    Error: ${e.message.slice(0, 50)}`);
+    clearTimeout(timer);
+    console.log(`    Error: ${e.message.slice(0, 60)}`);
     return null;
   }
 }
 
-function parseProducts(html, baseUrl) {
+function parseShopify(html, baseUrl) {
   const $ = cheerio.load(html);
   const seen = new Set();
   const items = [];
 
+  // Try all common Shopify product grid selectors
   const containers = [
     ".product-item", ".product-card", ".grid__item",
-    ".card-wrapper", ".productitem", ".product-listing",
-    "[data-product-id]", ".collection-product-card",
+    ".card-wrapper", ".productitem", ".collection-product-card",
+    "[data-product-id]", "li.product-item",
   ];
 
-  for (const container of containers) {
-    const els = $(container);
-    if (els.length === 0) continue;
+  for (const sel of containers) {
+    if ($(sel).length === 0) continue;
 
-    els.each((_, el) => {
+    $(sel).each((_, el) => {
+      // Title — multiple fallbacks
       let title = "";
-      const titleTries = [
-        ".card__heading a", ".product-item__title", ".productitem--title",
-        ".product-title", ".product-name", ".product-card__title",
-        "h2 a", "h3 a", "h2", "h3", "h4", "a[aria-label]",
+      const titleSelectors = [
+        ".card__heading a", ".product-item__title a", ".productitem--title a",
+        ".product-title a", ".product-card__title a",
+        ".card__heading", ".product-item__title", ".productitem--title",
+        "h2 a", "h3 a", "h4 a", "h2", "h3", "h4",
       ];
-      for (const ts of titleTries) {
-        const found = $(el).find(ts).first();
-        const text = (found.attr("aria-label") || found.text()).trim();
-        if (text && text.length > 5 && !text.includes("<") && !text.includes("src=")) {
+      for (const ts of titleSelectors) {
+        const text = $(el).find(ts).first().text().trim();
+        if (text && text.length > 4 && !text.includes("<") && !text.includes("src=")) {
           title = text;
           break;
         }
       }
       if (!title) return;
 
-      // Extract first £ price
-      const fullText = $(el).text();
-      const priceMatch = fullText.match(/£\s*([\d,]+\.?\d*)/);
+      // Price — extract first £X.XX from text
+      const rawText = $(el).text();
+      const priceMatch = rawText.match(/£\s*([\d,]+\.?\d{0,2})/);
       if (!priceMatch) return;
-      const price = parseFloat(priceMatch[1].replace(",", ""));
-      if (!price || price <= 0 || price > 5000) return;
+      const price = parseFloat(priceMatch[1].replace(/,/g, ""));
+      if (!price || price <= 0) return;
 
-      const soldOut = fullText.toLowerCase().includes("sold out") ||
-        $(el).find(".sold-out, [class*='sold-out'], [class*='unavailable']").length > 0;
+      // Image URL
+      let imageUrl = "";
+      const img = $(el).find("img").first();
+      const src = img.attr("src") || img.attr("data-src") || img.attr("data-srcset") || "";
+      if (src) {
+        const cleanSrc = src.split(" ")[0];
+        imageUrl = cleanSrc.startsWith("//") ? `https:${cleanSrc}` :
+                   cleanSrc.startsWith("http") ? cleanSrc : `${baseUrl}${cleanSrc}`;
+      }
+
+      // Sold out check
+      const lower = rawText.toLowerCase();
+      const soldOut = lower.includes("sold out") || lower.includes("out of stock") ||
+        $(el).find(".sold-out, [class*='sold-out']").length > 0;
       if (soldOut) return;
 
+      // Product URL
       const link = $(el).find("a[href*='/products/']").first().attr("href") ||
                    $(el).find("a[href]").first().attr("href");
       if (!link) return;
-      const url = link.startsWith("http") ? link : `${baseUrl}${link}`;
+      const productUrl = link.startsWith("http") ? link : `${baseUrl}${link}`;
 
-      const key = `${title}::${price}`;
+      const key = `${title.toLowerCase()}::${Math.round(price)}`;
       if (!seen.has(key)) {
         seen.add(key);
-        items.push({ title, price, url });
+        items.push({ title, price, url: productUrl, image: imageUrl });
       }
     });
+
     if (items.length > 0) break;
   }
   return items;
@@ -298,27 +322,27 @@ const RETAILERS = [
   {
     name: "Total Cards", base: "https://totalcards.net",
     urls: [
-      "https://totalcards.net/search?q=pokemon+booster+box&type=product",
+      "https://totalcards.net/search?q=pokemon+scarlet+violet+booster+box&type=product",
+      "https://totalcards.net/search?q=pokemon+sword+shield+booster+box&type=product",
       "https://totalcards.net/search?q=pokemon+elite+trainer+box&type=product",
-      "https://totalcards.net/search?q=pokemon+booster+pack&type=product",
-      "https://totalcards.net/search?q=pokemon+tin&type=product",
+      "https://totalcards.net/search?q=pokemon+booster+bundle&type=product",
     ],
   },
   {
     name: "Titan Cards", base: "https://titancards.co.uk",
     urls: [
-      "https://titancards.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://titancards.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
       "https://titancards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://titancards.co.uk/search?q=pokemon+booster+pack&type=product",
+      "https://titancards.co.uk/search?q=pokemon+half+box&type=product",
     ],
   },
   {
     name: "Eterna Cards", base: "https://eternacards.co.uk",
     urls: [
-      "https://eternacards.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+sword+shield+booster+box&type=product",
+      "https://eternacards.co.uk/search?q=pokemon+half+booster+box&type=product",
       "https://eternacards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+booster+pack&type=product",
-      "https://eternacards.co.uk/search?q=pokemon+half+box&type=product",
     ],
   },
   {
@@ -329,23 +353,17 @@ const RETAILERS = [
     ],
   },
   {
-    name: "Big Orbit", base: "https://www.bigorbitcards.co.uk",
-    urls: [
-      "https://www.bigorbitcards.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://www.bigorbitcards.co.uk/search?q=pokemon+elite+trainer+box&type=product",
-    ],
-  },
-  {
     name: "Double Sleeved", base: "https://doublesleeved.co.uk",
     urls: [
-      "https://doublesleeved.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://doublesleeved.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
+      "https://doublesleeved.co.uk/search?q=pokemon+sword+shield+booster+box&type=product",
       "https://doublesleeved.co.uk/search?q=pokemon+elite+trainer+box&type=product",
     ],
   },
   {
     name: "Toys N Geek", base: "https://www.toysngeek.co.uk",
     urls: [
-      "https://www.toysngeek.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://www.toysngeek.co.uk/search?q=pokemon+scarlet+violet+booster+box&type=product",
       "https://www.toysngeek.co.uk/search?q=pokemon+elite+trainer+box&type=product",
     ],
   },
@@ -353,55 +371,123 @@ const RETAILERS = [
     name: "The Card Vault", base: "https://thecardvault.co.uk",
     urls: [
       "https://thecardvault.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://thecardvault.co.uk/search?q=pokemon+booster+pack&type=product",
     ],
   },
   {
     name: "My TCG", base: "https://mytcg.co.uk",
     urls: [
       "https://mytcg.co.uk/search?q=pokemon+booster+box&type=product",
-      "https://mytcg.co.uk/search?q=pokemon+booster+pack&type=product",
     ],
   },
   {
     name: "Gathering Games", base: "https://gatheringgames.co.uk",
     urls: [
       "https://gatheringgames.co.uk/search?q=pokemon+booster+box&type=product",
+      "https://gatheringgames.co.uk/search?q=pokemon+elite+trainer+box&type=product",
     ],
   },
   {
     name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",
     urls: [
-      "https://magicmadhouse.co.uk/search?q=pokemon+booster+box",
+      "https://magicmadhouse.co.uk/search?q=pokemon+scarlet+violet+booster+box",
       "https://magicmadhouse.co.uk/search?q=pokemon+elite+trainer+box",
-    ],
-  },
-  {
-    name: "Chaos Cards", base: "https://www.chaoscards.co.uk",
-    urls: [
-      "https://www.chaoscards.co.uk/search?q=pokemon+booster+box",
-      "https://www.chaoscards.co.uk/search?q=pokemon+booster+pack",
     ],
   },
 ];
 
 const notified = new Set();
 
-async function sendTelegram(msg) {
+async function sendPhoto(imageUrl, caption) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        photo: imageUrl,
+        caption,
+        parse_mode: "HTML",
+      }),
+    });
+    const d = await res.json();
+    if (d.ok) { console.log("    📸 Photo sent!"); return true; }
+    console.log("    ⚠️ Photo failed:", d.description);
+    return false;
+  } catch (e) {
+    console.log("    ⚠️ Photo error:", e.message);
+    return false;
+  }
+}
+
+async function sendMessage(text) {
   try {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID, text: msg,
-        parse_mode: "HTML", disable_web_page_preview: false,
+        chat_id: TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
       }),
     });
     const d = await res.json();
-    if (d.ok) console.log("    📱 Sent!");
-    else console.log("    ❌ Telegram:", d.description);
+    if (d.ok) console.log("    📱 Message sent!");
+    else console.log("    ❌ Message error:", d.description);
   } catch (e) {
-    console.log("    ❌ Telegram:", e.message);
+    console.log("    ❌ Message error:", e.message);
+  }
+}
+
+async function sendAlert(f) {
+  const rrp = getRRP(f.title);
+  const market = getMarket(f.title);
+  const { label, stars } = getDealRating(f.price, rrp, market);
+
+  const vsRrp = rrp ? Math.round(((f.price - rrp) / rrp) * 100) : null;
+  const vsMarket = market ? Math.round(((f.price - market) / market) * 100) : null;
+  const flip = market ? (market - f.price - (market * 0.13) - 4.00) : null;
+  const flipPct = flip && f.price ? Math.round((flip / f.price) * 100) : null;
+  const perPack = f.title.toLowerCase().includes("booster box") && !f.title.toLowerCase().includes("half") ?
+    (f.price / 36).toFixed(2) :
+    f.title.toLowerCase().includes("half") ? (f.price / 18).toFixed(2) : null;
+
+  const lines = [
+    `${label} ${stars}`,
+    ``,
+    `<b>${f.title}</b>`,
+    `🏪 <b>${f.retailer}</b>`,
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `💰 <b>BUY NOW:   £${f.price.toFixed(2)}</b>`,
+  ];
+
+  if (rrp) lines.push(`📊 RRP:       £${rrp.toFixed(2)}  <b>(${vsRrp > 0 ? "+" : ""}${vsRrp}%)</b>`);
+  if (market) lines.push(`📈 MARKET:    £${market.toFixed(2)}  <b>(${vsMarket > 0 ? "+" : ""}${vsMarket}%)</b>`);
+  if (perPack) lines.push(`🃏 PER PACK:  £${perPack}`);
+
+  if (flip !== null) {
+    lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`🏷️ FLIP PROFIT: <b>${flip > 0 ? "+" : ""}£${flip.toFixed(2)} (${flipPct > 0 ? "+" : ""}${flipPct}% ROI)</b>`);
+    lines.push(`📉 eBay fees: -£${(market * 0.13).toFixed(2)} + £4 postage`);
+    if (flip > 0) {
+      lines.push(`✅ <b>PROFITABLE TO FLIP</b>`);
+    } else {
+      lines.push(`⚠️ Not profitable to flip at this price`);
+    }
+  }
+
+  lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+  lines.push(`<a href="${f.url}">👉 BUY NOW →</a>`);
+
+  const caption = lines.join("\n");
+
+  // Send with photo if we have an image, otherwise plain message
+  if (f.image && f.image.startsWith("http")) {
+    const sent = await sendPhoto(f.image, caption);
+    if (!sent) await sendMessage(caption);
+  } else {
+    await sendMessage(caption);
   }
 }
 
@@ -411,74 +497,42 @@ async function runScan() {
 
   for (const retailer of RETAILERS) {
     console.log(`  → ${retailer.name}`);
-    const allItems = [];
 
     for (const url of retailer.urls) {
-      await new Promise(r => setTimeout(r, 1200));
+      await new Promise(r => setTimeout(r, 2000)); // 2s between requests
       const html = await fetchPage(url);
       if (!html) continue;
 
-      const items = parseProducts(html, retailer.base);
-      console.log(`    ${items.length} items from ${url.split("q=")[1]?.split("&")[0]}`);
-      if (items.length > 0) console.log(`    e.g. "${items[0].title}" £${items[0].price}`);
-      allItems.push(...items);
-    }
+      const items = parseShopify(html, retailer.base);
+      const term = url.split("q=")[1]?.split("&")[0] || "";
+      console.log(`    [${term}] ${items.length} items parsed`);
 
-    for (const item of allItems) {
-      if (!isValidProduct(item.title)) continue;
-      const key = `${retailer.name}::${item.url}`;
-      if (!notified.has(key)) {
-        notified.add(key);
-        findings.push({ ...item, retailer: retailer.name });
-        console.log(`    🟢 MATCH: "${item.title}" £${item.price}`);
+      for (const item of items) {
+        if (!isValidProduct(item.title, item.price)) continue;
+
+        const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
+        if (!notified.has(key)) {
+          notified.add(key);
+          findings.push({ ...item, retailer: retailer.name });
+          console.log(`    🟢 "${item.title}" £${item.price}`);
+        }
       }
     }
   }
 
-  console.log(`\n📊 ${findings.length} new items found`);
+  console.log(`\n📊 ${findings.length} new confirmed deals`);
 
   for (const f of findings) {
-    const rrp = getRRP(f.title);
-    const resell = getResell(f.title);
-    const rating = (rrp || resell) ? getDealRating(f.price, rrp || f.price, resell) : "📦 IN STOCK";
-
-    const vsRrp = rrp ? Math.round(((f.price - rrp) / rrp) * 100) : null;
-    const vsMarket = resell ? Math.round(((f.price - resell) / resell) * 100) : null;
-    const ebayFees = resell ? (resell * 0.13).toFixed(2) : null;
-    const flip = resell ? (resell - f.price - (resell * 0.13) - 4.00).toFixed(2) : null;
-    const flipPct = resell && flip ? Math.round((parseFloat(flip) / f.price) * 100) : null;
-
-    const lines = [
-      rating, ``,
-      `<b>${f.title}</b>`,
-      `🏪 ${f.retailer}`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━`,
-      `💰 BUY NOW:    £${f.price.toFixed(2)}`,
-    ];
-
-    if (rrp) {
-      lines.push(`📊 RRP:        £${rrp.toFixed(2)}  (${vsRrp > 0 ? "+" : ""}${vsRrp}% vs RRP)`);
-    }
-    if (resell) {
-      lines.push(`📈 MARKET:     £${resell.toFixed(2)}  (${vsMarket > 0 ? "+" : ""}${vsMarket}% vs market)`);
-      lines.push(`━━━━━━━━━━━━━━━━━━━`);
-      lines.push(`🏷️ FLIP PROFIT: ${parseFloat(flip) > 0 ? "+" : ""}£${flip} (${flipPct > 0 ? "+" : ""}${flipPct}% ROI)`);
-      lines.push(`📉 eBay fees:  -£${ebayFees} + £4 postage`);
-    }
-
-    lines.push(``, `<a href="${f.url}">👉 BUY NOW →</a>`);
-
-    await sendTelegram(lines.join("\n"));
-    await new Promise(r => setTimeout(r, 500));
+    await sendAlert(f);
+    await new Promise(r => setTimeout(r, 800));
   }
 
   if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
 }
 
 console.log("🚀 Lock3y's PokéScraper — Full Coverage");
-console.log("🇬🇧 English sealed products only");
-console.log("📊 Rated vs MARKET price (eBay sold) not just RRP\n");
+console.log("🇬🇧 English sealed products only · All expansions");
+console.log("📸 Images + full deal intelligence in every alert\n");
 
 runScan()
   .then(() => { console.log("\n✅ Done."); process.exit(0); })
