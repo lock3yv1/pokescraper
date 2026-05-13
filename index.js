@@ -2,10 +2,43 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const CHECK_INTERVAL = "*/10 * * * *";
+
+// ─── RETAIL REFERENCE PRICES (RRP / average market price) ──────────────────
+const RETAIL_PRICES = {
+  "booster box": 144.99,
+  "elite trainer box": 49.99,
+  "etb": 49.99,
+  "half box": 74.99,
+  "booster bundle": 24.99,
+  "booster pack": 4.49,
+  "mini tin": 8.99,
+  "collection box": 34.99,
+  "poster collection": 19.99,
+  "build and battle": 24.99,
+  "build & battle": 24.99,
+};
+
+function getRetailPrice(title) {
+  const t = title.toLowerCase();
+  for (const [key, price] of Object.entries(RETAIL_PRICES)) {
+    if (t.includes(key)) return price;
+  }
+  return null;
+}
+
+function getDealInfo(price, retailPrice) {
+  if (!retailPrice) return null;
+  const diff = ((price - retailPrice) / retailPrice) * 100;
+  const rounded = Math.round(diff);
+  if (diff <= -15) return { label: "🔥 EXCELLENT DEAL", pct: rounded, color: "great" };
+  if (diff <= -5)  return { label: "✅ GOOD DEAL", pct: rounded, color: "good" };
+  if (diff <= 5)   return { label: "⚖️ FAIR PRICE", pct: rounded, color: "fair" };
+  if (diff <= 20)  return { label: "⚠️ SLIGHTLY OVERPRICED", pct: rounded, color: "warn" };
+  return { label: "❌ OVERPRICED", pct: rounded, color: "bad" };
+}
 
 const PRODUCTS = [
   "ascended heroes booster box",
@@ -197,9 +230,9 @@ const RETAILERS = [
     searchUrl: (q) => `https://www.smythstoys.com/uk/en-gb/search/?text=${encodeURIComponent(q)}`,
     parseResults: ($) => {
       const items = [];
-      $(".product-grid-item, .product-card, .product-listing").each((_, el) => {
-        const title = $(el).find("h3, h4, .product-name, .product-title").first().text().trim();
-        const priceText = $(el).find(".price, .product-price, .js-priceValue").first().text().trim();
+      $(".product-grid-item, .product-card").each((_, el) => {
+        const title = $(el).find("h3, h4, .product-name").first().text().trim();
+        const priceText = $(el).find(".price, .js-priceValue").first().text().trim();
         const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
         const link = $(el).find("a").first().attr("href");
         const soldOut = $(el).text().toLowerCase().includes("out of stock");
@@ -324,7 +357,24 @@ async function runScan() {
 
   if (allFindings.length > 0) {
     for (const f of allFindings) {
-      const msg = `🔥 <b>IN STOCK!</b>\n\n<b>${f.title}</b>\n🏪 ${f.retailer}\n💰 £${f.price?.toFixed(2)}\n\n<a href="${f.url}">👉 BUY NOW</a>`;
+      const retailPrice = getRetailPrice(f.title);
+      const deal = retailPrice ? getDealInfo(f.price, retailPrice) : null;
+      const pctStr = deal
+        ? (deal.pct > 0 ? `+${deal.pct}%` : `${deal.pct}%`)
+        : null;
+
+      const msg = [
+        `${deal ? deal.label : "📦 IN STOCK"}`,
+        ``,
+        `<b>${f.title}</b>`,
+        `🏪 ${f.retailer}`,
+        `💰 Your price: <b>£${f.price?.toFixed(2)}</b>`,
+        retailPrice ? `📊 Retail RRP: £${retailPrice.toFixed(2)}` : null,
+        deal ? `📈 vs RRP: <b>${pctStr}</b>` : null,
+        ``,
+        `<a href="${f.url}">👉 BUY NOW →</a>`,
+      ].filter(Boolean).join("\n");
+
       await sendTelegram(msg);
       await new Promise(r => setTimeout(r, 500));
     }
@@ -333,7 +383,7 @@ async function runScan() {
   }
 }
 
-console.log("🚀 PokéScraper started");
+console.log("🚀 PokéScraper — Lock3y's Den");
 console.log(`📋 Watching: Ascended Heroes + Destined Rivals`);
 console.log(`🏪 Checking ${RETAILERS.length} retailers every 10 minutes\n`);
 
