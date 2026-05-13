@@ -5,17 +5,16 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** 
- * 1. THE TRUTH TABLE (Accuracy Control)
- * This is where you maintain 100% accuracy. 
- * If a set isn't here, the bot won't guess a high resell value.
+ * 1. THE TRUTH TABLE (Updated based on image_10.png and image_12.png)
+ * We have bumped Surging Sparks and Destined Rivals to reflect real eBay floors.
  */
 const MARKET_DATA = {
   "151": { box: 180, bundle: 55, etb: 70, upc: 135, strategy: "Long Term 💎" },
   "evolving skies": { box: 800, etb: 180, strategy: "Long Term 💎" },
   "prismatic evolutions": { box: 220, etb: 95, bundle: 45, strategy: "Medium Term 📈" },
-  "surging sparks": { box: 155, etb: 55, bundle: 30, strategy: "Short Term ⏱️" },
-  "destined rivals": { box: 150, etb: 70, bundle: 60, strategy: "Medium Term 📈" },
-  "team rocket": { box: 180, etb: 85, bundle: 50, strategy: "Long Term 💎" }
+  "surging sparks": { box: 155, etb: 55, bundle: 60, strategy: "Short Term ⏱️" }, // Corrected to £60
+  "destined rivals": { box: 150, etb: 75, bundle: 65, strategy: "Medium Term 📈" }, // Corrected to £65
+  "team rocket": { box: 185, etb: 90, bundle: 55, strategy: "Long Term 💎" }
 };
 
 const RRP_MAP = { box: 144.99, etb: 49.99, bundle: 24.99, upc: 119.99, tin: 24.99 };
@@ -23,7 +22,6 @@ const RRP_MAP = { box: 144.99, etb: 49.99, bundle: 24.99, upc: 119.99, tin: 24.9
 function getAnalysis(title, price) {
   const t = title.toLowerCase();
   
-  // Identify Product Type
   let type = null;
   if (t.includes("booster box") || t.includes("display box")) type = "box";
   else if (t.includes("etb") || t.includes("trainer box")) type = "etb";
@@ -33,27 +31,28 @@ function getAnalysis(title, price) {
   if (!type) return null;
 
   const rrp = RRP_MAP[type];
-  let resell = rrp; // Default to RRP if set unknown
+  let resell = rrp; 
   let strategy = "Quick Flip ⚠️";
+  let matchedSet = "None";
 
-  // Find exact set match for 100% Resell Accuracy
   for (const [set, data] of Object.entries(MARKET_DATA)) {
     if (t.includes(set)) {
       resell = data[type] || rrp;
       strategy = data.strategy;
+      matchedSet = set;
       break;
     }
   }
 
-  // MATH: (Resell * 0.87 [Fees]) - Buy Price - £4 [Shipping]
+  // Use the eBay fee + shipping math: (Market * 0.87) - Buy - £4
   const netReturn = (resell * 0.87);
   const flip = (netReturn - price - 4).toFixed(2);
   const margin = (((netReturn - 4) / price) - 1) * 100;
 
-  // Only trigger "DEAL" if profit is > £5 and margin is positive
-  const isDeal = flip > 5;
+  // We only care if profit is positive after all costs
+  const isDeal = parseFloat(flip) > 0;
 
-  return { rrp, resell, flip, strategy, isDeal, margin: margin.toFixed(1) };
+  return { rrp, resell, flip, strategy, isDeal, margin: margin.toFixed(1), matchedSet };
 }
 
 async function fetchPage(url) {
@@ -101,6 +100,9 @@ async function run() {
         if (analysis && !notified.has(item.url)) {
           notified.add(item.url);
           
+          // Debugging log to confirm 100% accurate set matching
+          console.log(`Matched: ${analysis.matchedSet} | Market: £${analysis.resell}`);
+
           const status = analysis.isDeal ? "✅ **PROFITABLE**" : "❌ OVERPRICED";
           const shop = base.replace('https://', '').replace('www.', '');
           
