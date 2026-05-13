@@ -1,23 +1,21 @@
-name: PokeScraper 2026 Pro
-
+name: PokeScraper
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: '20'
-      - run: npm install node-fetch
-      - name: Run Scraper Engine
+      - run: npm install
+      - name: Run scraper
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          node index.js
-          sleep 20 # Extra buffer for 2026 network congestion and image rendering
+        run: node index.js
