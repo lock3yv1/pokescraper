@@ -1,5 +1,3 @@
-require('dotenv').config();
-
 const cheerio = require("cheerio");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -25,7 +23,7 @@ const RESELL = {
   "phantasmal flames booster box": 280, "phantasmal flames elite trainer box": 90,
   "phantasmal flames booster pack": 12.00,
   "journey together booster box": 120, "journey together elite trainer box": 52,
-  "journey together booster bundle": 28, "journey together booster pack": 5.00,
+  "journey together booster bundle": 28, "journey together booster pack": 7.50,
   "prismatic evolutions booster box": 220, "prismatic evolutions booster bundle": 90,
   "prismatic evolutions elite trainer box": 95, "prismatic evolutions booster pack": 18.00,
   "surging sparks booster box": 155, "surging sparks elite trainer box": 60,
@@ -43,6 +41,9 @@ const RESELL = {
   "crown zenith booster box": 140, "chilling reign booster box": 160,
   "battle styles booster box": 180, "shining fates booster box": 250,
   "hidden fates booster box": 400, "hidden fates booster pack": 15.00,
+  // Added Japanese sets found in your logs
+  "ninja spinner booster box": 150, "heat wave arena booster box": 180,
+  "mega dream ex booster box": 160
 };
 
 const PRODUCT_KEYWORDS = [
@@ -66,11 +67,14 @@ const SETS = [
   "obsidian flames","151","evolving skies","brilliant stars",
   "fusion strike","lost origin","silver tempest","crown zenith",
   "chilling reign","battle styles","shining fates","hidden fates",
+  "ninja spinner", "heat wave arena", "mega dream ex", "mega evolution"
 ];
 
 function isValid(title) {
   const t = title.toLowerCase();
-  if (!t.includes("pokemon")) return false;
+  // Filter out the <img> tags and other HTML debris found in logs
+  if (t.includes("<img") || t.includes("<script") || t.includes("<br")) return false;
+  if (!t.includes("pokemon") && !t.includes("pokémon")) return false;
   if (EXCLUDE.some(k => t.includes(k))) return false;
   if (!PRODUCT_KEYWORDS.some(k => t.includes(k))) return false;
   if (!SETS.some(s => t.includes(s))) return false;
@@ -79,16 +83,32 @@ function isValid(title) {
 
 function getRRP(title) {
   const t = title.toLowerCase();
-  const sorted = Object.entries(RRP).sort((a,b) => b[0].length - a[0].length);
-  for (const [k,v] of sorted) if (t.includes(k)) return v;
-  return null;
+  let bestMatch = null;
+  for (const [k, v] of Object.entries(RRP)) {
+    if (t.includes(k)) {
+      if (!bestMatch || k.length > bestMatch.key.length) bestMatch = { key: k, val: v };
+    }
+  }
+  return bestMatch ? bestMatch.val : null;
 }
 
 function getResell(title) {
   const t = title.toLowerCase();
-  const sorted = Object.entries(RESELL).sort((a,b) => b[0].length - a[0].length);
-  for (const [k,v] of sorted) if (t.includes(k)) return v;
-  return null;
+  let bestMatch = null;
+  for (const [k, v] of Object.entries(RESELL)) {
+    // Fuzzy check: ensures it finds the specific set + product type
+    if (t.includes(k.split(' ')[0]) && t.includes(k.split(' ').slice(-1)[0])) {
+        if (t.includes(k) || (t.includes(k.replace("etb", "elite trainer box")))) {
+            if (!bestMatch || k.length > bestMatch.key.length) bestMatch = { key: k, val: v };
+        }
+    }
+  }
+  // Fallback to simpler include if specific fuzzy fails
+  if (!bestMatch) {
+    const sorted = Object.entries(RESELL).sort((a,b) => b[0].length - a[0].length);
+    for (const [k,v] of sorted) if (t.includes(k)) return v;
+  }
+  return bestMatch ? bestMatch.val : null;
 }
 
 function dealScore(buy, rrp) {
@@ -100,7 +120,7 @@ function dealScore(buy, rrp) {
   return "❌ OVERPRICED";
 }
 
-async function fetchPage(url, timeoutMs = 10000) {
+async function fetchPage(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -109,9 +129,6 @@ async function fetchPage(url, timeoutMs = 10000) {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
       }
     });
     clearTimeout(timer);
@@ -122,113 +139,59 @@ async function fetchPage(url, timeoutMs = 10000) {
     return await res.text();
   } catch (e) {
     clearTimeout(timer);
-    console.log(`    Timeout/error: ${e.message.slice(0,50)}`);
+    console.log(`    Error fetching ${url}: ${e.message.slice(0,50)}`);
     return null;
   }
 }
 
-// Try multiple CSS selector strategies
 function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
 
-  // Strategy 1: JSON-LD structured data (most reliable)
-  $('script[type="application/ld+json"]').each((_, el) => {
-    try {
-      const data = JSON.parse($(el).html());
-      const products = data["@type"] === "ItemList" ? data.itemListElement :
-                       data["@type"] === "Product" ? [data] : [];
-      for (const p of products) {
-        const item = p.item || p;
-        const title = item.name;
-        const price = parseFloat(item.offers?.price || item.offers?.lowPrice || 0);
-        const url = item.url || item["@id"];
-        const inStock = !item.offers?.availability?.includes("OutOfStock");
-        if (title && price > 0 && url && inStock) {
-          items.push({ title, price, url: url.startsWith("http") ? url : `${baseUrl}${url}` });
-        }
-      }
-    } catch {}
-  });
-
-  if (items.length > 0) return items;
-
-  // Strategy 2: Common product grid selectors
   const selectors = [
-    ".product-item",
-    ".product-card",
-    ".grid__item",
-    ".card-wrapper",
-    "[data-product-id]",
-    ".boost-pfs-filter-products article",
-    ".collection-product-card",
-    "li.grid__item",
-    ".product",
+    ".product-item", ".product-card", ".grid__item", ".card-wrapper",
+    "[data-product-id]", ".product", ".product-block"
   ];
 
   for (const sel of selectors) {
     $(sel).each((_, el) => {
-      // Get title — text only, no HTML
-      let title = "";
-      const titleSelectors = ["h2","h3","h4",".card__heading",".product-item__title",".product-title",".product-name",".productitem--title"];
-      for (const ts of titleSelectors) {
-        const t = $(el).find(ts).first().text().trim();
-        if (t && t.length > 3 && !t.includes("<img")) { title = t; break; }
-      }
-      if (!title) {
-        // Try aria-label on link
+      // Improved title extraction: Clean whitespace and line breaks
+      let title = $(el).find("h2, h3, h4, .card__heading, .product-item__title, .product-title").first().text().replace(/\s+/g, ' ').trim();
+      
+      if (!title || title.includes("<img")) {
         const ariaLabel = $(el).find("a[aria-label]").first().attr("aria-label");
-        if (ariaLabel) title = ariaLabel.trim();
+        if (ariaLabel) title = ariaLabel.replace(/\s+/g, ' ').trim();
       }
 
-      // Get price — take first money amount only
-      const priceEl = $(el).find(".price__regular, .price-item--regular, .price:not(.price--sold-out)").first();
-      let priceText = priceEl.text().trim();
-      if (!priceText) priceText = $(el).find("[class*='price']").first().text().trim();
-      // Extract first price only (e.g. "£78.00£78.00" -> 78.00)
-      const priceMatch = priceText.match(/[\d]+\.?[\d]*/);
-      const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
+      const priceEl = $(el).find(".price__regular, .price-item--regular, .price:not(.price--sold-out), [class*='price']").first();
+      let priceText = priceEl.text().trim().replace(/[^0-9.]/g, "");
+      const price = parseFloat(priceText) || 0;
 
       const link = $(el).find("a[href]").first().attr("href");
-      const soldOut = $(el).text().toLowerCase().includes("sold out") ||
-                      $(el).find("[class*='sold-out'], [class*='unavailable']").length > 0;
+      const soldOut = $(el).text().toLowerCase().includes("sold out") || $(el).find("[class*='sold-out']").length > 0;
 
-      if (title && !soldOut && price > 0 && price < 2000 && link && !title.includes("<")) {
-        items.push({ title, price, url: link.startsWith("http") ? link : `${baseUrl}${link}` });
+      if (title && !soldOut && price > 0 && price < 2000 && link) {
+        items.push({ 
+          title, 
+          price, 
+          url: link.startsWith("http") ? link : `${baseUrl.replace(/\/$/, '')}/${link.replace(/^\//, '')}` 
+        });
       }
     });
-    if (items.length > 0) break;
+    if (items.length > 5) break; 
   }
-
-  // Strategy 3: Look for product links with prices anywhere on page
-  if (items.length === 0) {
-    $("a[href*='/products/']").each((_, el) => {
-      const title = $(el).text().trim() || $(el).attr("aria-label") || "";
-      const parent = $(el).closest("li, article, div.product, div.item");
-      const priceText = parent.find("[class*='price']").first().text().trim();
-      const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
-      if (title && price > 0) {
-        const href = $(el).attr("href");
-        items.push({ title, price, url: href.startsWith("http") ? href : `${baseUrl}${href}` });
-      }
-    });
-  }
-
   return items;
 }
 
-// Use search URLs which are more reliable than category pages
 const RETAILERS = [
   { name: "Total Cards",     base: "https://totalcards.net",          url: "https://totalcards.net/search?q=pokemon+booster+box+etb&type=product" },
   { name: "Titan Cards",     base: "https://titancards.co.uk",        url: "https://titancards.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "Eterna Cards",    base: "https://eternacards.co.uk",       url: "https://eternacards.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "PACKRAT",         base: "https://packratt.co.uk",          url: "https://packratt.co.uk/search?q=pokemon+booster+box&type=product" },
-  { name: "Big Orbit",       base: "https://www.bigorbitcards.co.uk", url: "https://www.bigorbitcards.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "Double Sleeved",  base: "https://doublesleeved.co.uk",     url: "https://doublesleeved.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "Toys N Geek",     base: "https://www.toysngeek.co.uk",     url: "https://www.toysngeek.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "The Card Vault",  base: "https://thecardvault.co.uk",      url: "https://thecardvault.co.uk/search?q=pokemon+booster+box&type=product" },
   { name: "My TCG",          base: "https://mytcg.co.uk",             url: "https://mytcg.co.uk/search?q=pokemon+booster+box&type=product" },
-  { name: "Chaos Cards",     base: "https://www.chaoscards.co.uk",    url: "https://www.chaoscards.co.uk/search?q=pokemon+booster+box" },
   { name: "Magic Madhouse",  base: "https://magicmadhouse.co.uk",     url: "https://magicmadhouse.co.uk/search?q=pokemon+booster+box" },
 ];
 
@@ -243,9 +206,9 @@ async function sendTelegram(msg) {
     });
     const data = await res.json();
     if (data.ok) console.log("    📱 Sent!");
-    else console.log("    ❌ Telegram:", data.description);
+    else console.log("    ❌ Telegram Error:", data.description);
   } catch (e) {
-    console.log("    ❌ Telegram:", e.message);
+    console.log("    ❌ Fetch Error:", e.message);
   }
 }
 
@@ -262,17 +225,14 @@ async function runScan() {
     const items = extractProducts(html, retailer.base);
     console.log(`${items.length} items scraped`);
 
-    // Debug: show first few items found
-    items.slice(0,3).forEach(item => console.log(`    📄 "${item.title}" £${item.price}`));
-
-    // Delay between retailers to avoid rate limiting
-    await new Promise(r => setTimeout(r, 1500));
-
     for (const item of items) {
       if (!isValid(item.title)) continue;
+      
       const rrp = getRRP(item.title);
       const resell = getResell(item.title);
+      
       if (!rrp || !resell) continue;
+      
       const key = `${retailer.name}::${item.url}`;
       if (!notified.has(key)) {
         notified.add(key);
@@ -280,6 +240,7 @@ async function runScan() {
         console.log(`    🟢 MATCH: ${item.title} — £${item.price}`);
       }
     }
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   console.log(`\n📊 Total confirmed deals: ${findings.length}`);
@@ -304,8 +265,6 @@ async function runScan() {
     await sendTelegram(msg);
     await new Promise(r => setTimeout(r, 300));
   }
-
-  if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
 }
 
 console.log("🚀 Lock3y's PokéScraper — Debug Mode");
