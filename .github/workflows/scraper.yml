@@ -1,4 +1,5 @@
 name: PokeScraper 2026 Pro
+
 on:
   schedule:
     - cron: '0 * * * *'
@@ -13,10 +14,10 @@ jobs:
         with:
           node-version: '20'
       - run: npm install node-fetch
-      - name: Run Scraper
+      - name: Run Scraper Engine
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           node index.js
-          sleep 15 # Required to ensure all images and buttons are uploaded
+          sleep 20 # Extra buffer for 2026 network congestion and image rendering
