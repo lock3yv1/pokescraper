@@ -25,31 +25,40 @@ const HEADERS = {
 // PRODUCTS
 // ─────────────────────────────────────────────
 
-const PRODUCTS = [
-  {
-    name: "Prismatic Evolutions ETB",
-    keywords: ["prismatic evolutions", "elite trainer box"],
-    rrp: 49.99,
-    resell: 95,
-  },
-  {
-    name: "151 Booster Bundle",
-    keywords: ["151", "booster bundle"],
-    rrp: 24.99,
-    resell: 55,
-  },
-  {
-    name: "Surging Sparks Booster Box",
-    keywords: ["surging sparks", "booster box"],
-    rrp: 143.64,
-    resell: 155,
-  },
-  {
-    name: "Evolving Skies Booster Box",
-    keywords: ["evolving skies", "booster box"],
-    rrp: 143.64,
-    resell: 800,
-  },
+const SEARCH_TERMS = [
+  // Mega Evolution
+  "pokemon ascended heroes",
+  "pokemon destined rivals",
+  "pokemon perfect order",
+  "pokemon chaos rising",
+  "pokemon phantasmal flames",
+
+  // Scarlet & Violet
+  "pokemon prismatic evolutions",
+  "pokemon journey together",
+  "pokemon surging sparks",
+  "pokemon stellar crown",
+  "pokemon shrouded fable",
+  "pokemon twilight masquerade",
+  "pokemon temporal forces",
+  "pokemon paradox rift",
+  "pokemon obsidian flames",
+  "pokemon paldea evolved",
+  "pokemon paldean fates",
+  "pokemon 151",
+
+  // Sword & Shield
+  "pokemon evolving skies",
+  "pokemon brilliant stars",
+  "pokemon fusion strike",
+  "pokemon lost origin",
+  "pokemon silver tempest",
+  "pokemon crown zenith",
+  "pokemon astral radiance",
+  "pokemon chilling reign",
+  "pokemon battle styles",
+  "pokemon hidden fates",
+  "pokemon cosmic eclipse",
 ];
 
 // ─────────────────────────────────────────────
