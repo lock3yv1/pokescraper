@@ -166,15 +166,32 @@ function extractProducts(html, baseUrl) {
 
   for (const sel of selectors) {
     $(sel).each((_, el) => {
-      const titleEl = $(el).find("h2, h3, h4, .card__heading, .product-item__title, .product-title, .product-name, a[aria-label]").first();
-      const title = titleEl.text().trim() || titleEl.attr("aria-label") || "";
-      const priceText = $(el).find(".price, .price__regular, .price__sale, [class*='price']").first().text().trim();
-      const price = parseFloat(priceText.replace(/[^0-9.]/g, ""));
-      const link = $(el).find("a[href]").first().attr("href");
-      const soldOut = $(el).text().toLowerCase().includes("sold out") || 
-                      $(el).find("[class*='sold'], [class*='unavailable']").length > 0;
+      // Get title — text only, no HTML
+      let title = "";
+      const titleSelectors = ["h2","h3","h4",".card__heading",".product-item__title",".product-title",".product-name",".productitem--title"];
+      for (const ts of titleSelectors) {
+        const t = $(el).find(ts).first().text().trim();
+        if (t && t.length > 3 && !t.includes("<img")) { title = t; break; }
+      }
+      if (!title) {
+        // Try aria-label on link
+        const ariaLabel = $(el).find("a[aria-label]").first().attr("aria-label");
+        if (ariaLabel) title = ariaLabel.trim();
+      }
 
-      if (title && !soldOut && price > 0 && link) {
+      // Get price — take first money amount only
+      const priceEl = $(el).find(".price__regular, .price-item--regular, .price:not(.price--sold-out)").first();
+      let priceText = priceEl.text().trim();
+      if (!priceText) priceText = $(el).find("[class*='price']").first().text().trim();
+      // Extract first price only (e.g. "£78.00£78.00" -> 78.00)
+      const priceMatch = priceText.match(/[\d]+\.?[\d]*/);
+      const price = priceMatch ? parseFloat(priceMatch[0]) : 0;
+
+      const link = $(el).find("a[href]").first().attr("href");
+      const soldOut = $(el).text().toLowerCase().includes("sold out") ||
+                      $(el).find("[class*='sold-out'], [class*='unavailable']").length > 0;
+
+      if (title && !soldOut && price > 0 && price < 2000 && link && !title.includes("<")) {
         items.push({ title, price, url: link.startsWith("http") ? link : `${baseUrl}${link}` });
       }
     });
@@ -245,6 +262,9 @@ async function runScan() {
 
     // Debug: show first few items found
     items.slice(0,3).forEach(item => console.log(`    📄 "${item.title}" £${item.price}`));
+
+    // Delay between retailers to avoid rate limiting
+    await new Promise(r => setTimeout(r, 1500));
 
     for (const item of items) {
       if (!isValid(item.title)) continue;
