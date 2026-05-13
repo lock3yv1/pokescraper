@@ -1,4 +1,4 @@
-const cheerio = require("cheerio");
+import * as cheerio from 'cheerio';
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
