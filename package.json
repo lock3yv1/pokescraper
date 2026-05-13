@@ -1,14 +1,11 @@
 {
   "name": "pokescraper",
   "version": "1.0.0",
-  "description": "Lock3y's Den - UK Pokemon TCG scraper",
+  "description": "Pokemon TCG Price Scraper",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0",
-    "dotenv": "^16.4.5"
-  }
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.2"
+  },
+  "type": "module"
 }
