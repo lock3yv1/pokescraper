@@ -4,11 +4,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-/** 
- * 1. THE GOLD STANDARD DATA (100% Accuracy)
- * If it's not on this list, it WILL NOT ping.
- * This prevents the "Violet EX" error by ensuring we only track what we know.
- */
+// 1. THE GOLD STANDARD DATA (Updated & Tightened)
 const MARKET_DATA = {
   "151": { box: 185, bundle: 60, etb: 75, upc: 140, strategy: "Long Term 💎" },
   "evolving skies": { box: 820, etb: 195, strategy: "Long Term 💎" },
@@ -18,8 +14,7 @@ const MARKET_DATA = {
   "destined rivals": { box: 155, etb: 78, bundle: 68, strategy: "Medium Term 📈" },
   "silver tempest": { box: 165, etb: 55, bundle: 38, strategy: "Long Term 💎" },
   "lost origin": { box: 195, etb: 65, bundle: 45, strategy: "Long Term 💎" },
-  // Add Japanese sets explicitly if you want to track them
-  "japanese violet ex": { box: 75, strategy: "Quick Flip ⚠️" } 
+  "violet ex": { box: 75, strategy: "Japanese - Quick Flip ⚠️" } 
 };
 
 const RRP_MAP = { box: 144.99, etb: 49.99, bundle: 24.99, upc: 119.99 };
@@ -27,7 +22,7 @@ const RRP_MAP = { box: 144.99, etb: 49.99, bundle: 24.99, upc: 119.99 };
 function getAnalysis(title, price) {
   const t = title.toLowerCase();
   
-  // 1. Identify Product Type
+  // Identify Product Type
   let type = null;
   if (t.includes("booster box") || t.includes("display box")) type = "box";
   else if (t.includes("etb") || t.includes("trainer box")) type = "etb";
@@ -36,7 +31,7 @@ function getAnalysis(title, price) {
   
   if (!type) return null;
 
-  // 2. Identify Set & Verify Market Value
+  // Check if we have verified data for this specific set
   let setInfo = null;
   for (const [setName, data] of Object.entries(MARKET_DATA)) {
     if (t.includes(setName)) {
@@ -47,19 +42,22 @@ function getAnalysis(title, price) {
     }
   }
 
-  // CRITICAL: If we don't have a verified market price for this set/type, SKIP.
+  // If set is unknown, we SKIP to maintain 100% accuracy
   if (!setInfo) return null;
 
-  // 3. Precision Math
-  // (Market * 0.87 [eBay Fees]) - Buy Price - £4 [Shipping/Materials]
   const netReturn = (setInfo.resell * 0.87);
   const flip = (netReturn - price - 4).toFixed(2);
   const margin = (((netReturn - 4) / price) - 1) * 100;
 
-  // Only ping if it's an actual deal (Profit > £2)
-  const isDeal = parseFloat(flip) > 2;
-
-  return { rrp: setInfo.rrp, resell: setInfo.resell, flip, strategy: setInfo.strategy, isDeal, margin: margin.toFixed(1) };
+  // We ONLY ping if it's actually profitable
+  return { 
+    rrp: setInfo.rrp, 
+    resell: setInfo.resell, 
+    flip, 
+    strategy: setInfo.strategy, 
+    isDeal: parseFloat(flip) > 1.00, // Profit floor of £1
+    margin: margin.toFixed(1) 
+  };
 }
 
 async function fetchPage(url) {
@@ -78,18 +76,11 @@ function extract(html, base) {
   $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .item, .product-grid-item").each((_, el) => {
     const element = $(el);
     const title = element.find("h2, h3, h4, .product-title, .title, .name").first().text().trim();
-    const priceText = element.find("[class*='price'], .amount, .money").first().text().replace(/[^0-9.]/g, "");
-    const price = parseFloat(priceText);
+    const price = parseFloat(element.find("[class*='price'], .amount, .money").first().text().replace(/[^0-9.]/g, ""));
     const link = element.find("a[href]").first().attr("href");
     
-    // --- ADVANCED STOCK FILTERING ---
     const innerText = element.text().toLowerCase();
-    const outOfStock = 
-      innerText.includes("sold out") || 
-      innerText.includes("out of stock") || 
-      innerText.includes("unavailable") ||
-      element.find(".sold-out, .out-of-stock, .disabled").length > 0 ||
-      element.attr("class").includes("sold-out");
+    const outOfStock = innerText.includes("sold out") || innerText.includes("out of stock") || innerText.includes("unavailable") || element.find(".sold-out, .out-of-stock").length > 0;
 
     if (title && price > 15 && link && !outOfStock) {
       const url = link.startsWith("http") ? link : `${new URL(base).origin}${link.startsWith('/') ? '' : '/'}${link}`;
@@ -104,23 +95,27 @@ const RETAILERS = [
   "https://doublesleeved.co.uk", "https://www.totalcards.net", "https://mytcg.co.uk"
 ];
 
-const QUERIES = ["pokemon+booster+box", "pokemon+etb", "pokemon+bundle"];
-
 async function run() {
+  console.log(`🚀 STARTING SCRAPE: ${new Date().toLocaleTimeString()}`);
   const notified = new Set();
+
   for (const base of RETAILERS) {
-    for (const q of QUERIES) {
+    console.log(`🔎 Checking: ${base}...`);
+    let shopCount = 0;
+
+    for (const q of ["pokemon+booster+box", "pokemon+etb", "pokemon+bundle"]) {
       const html = await fetchPage(`${base}/search?q=${q}`);
-      if (!html) continue;
+      if (!html) { console.log(`  ⚠️ Blocked by ${base}`); break; }
 
       const items = extract(html, base);
       for (const item of items) {
         const analysis = getAnalysis(item.title, item.price);
         if (analysis && analysis.isDeal && !notified.has(item.url)) {
           notified.add(item.url);
+          shopCount++;
           
-          const shop = base.replace('https://', '').replace('www.', '');
-          const msg = `✅ **PROFITABLE DEAL**\n\n<b>${item.title}</b>\n🏪 ${shop}\n\n💰 **BUY:** £${item.price.toFixed(2)}\n📈 **MARKET:** £${analysis.resell.toFixed(2)}\n🏷️ **EST. FLIP:** £${analysis.flip}\n📊 **MARGIN:** ${analysis.margin}%\n⏳ **STRATEGY:** ${analysis.strategy}\n\n👉 <a href="${item.url}">VIEW PRODUCT →</a>`;
+          const shopName = base.replace('https://', '').replace('www.', '');
+          const msg = `✅ **PROFITABLE DEAL**\n\n<b>${item.title}</b>\n🏪 ${shopName}\n\n💰 **BUY:** £${item.price.toFixed(2)}\n📈 **MARKET:** £${analysis.resell.toFixed(2)}\n🏷️ **EST. FLIP:** £${analysis.flip}\n📊 **MARGIN:** ${analysis.margin}%\n⏳ **STRATEGY:** ${analysis.strategy}\n\n👉 <a href="${item.url}">VIEW PRODUCT →</a>`;
 
           await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
             method: "POST", headers: { "Content-Type": "application/json" }, 
@@ -128,9 +123,11 @@ async function run() {
           });
         }
       }
-      await wait(1500);
+      await wait(1000);
     }
+    console.log(`  ✅ Finished ${base}. Found ${shopCount} profitable deals.`);
   }
+  console.log("🏁 ALL SHOPS SCANNED.");
 }
 
-run().then(() => process.exit(0));
+run().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });
