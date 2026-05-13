@@ -53,34 +53,21 @@ function getMatch(title, list) {
   return best ? best.v : null;
 }
 
-// THE BLOCK BYPASS FETCH
 async function fetchPage(url) {
   try {
     const res = await fetch(url, { 
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"macOS"',
-        "Upgrade-Insecure-Requests": "1"
-      } 
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" } 
     });
     return res.ok ? await res.text() : null;
-  } catch (err) {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
-  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4, .item").each((_, el) => {
-    const title = $(el).find("h2, h3, h4, .product-title, .title, .name, .product-name").first().text().replace(/\s+/g, ' ').trim();
-    const priceText = $(el).find("[class*='price'], .amount, .current-price, .money").first().text().replace(/[^0-9.]/g, "");
+  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4").each((_, el) => {
+    const title = $(el).find("h2, h3, h4, .product-title, .title, .name").first().text().replace(/\s+/g, ' ').trim();
+    const priceText = $(el).find("[class*='price'], .amount, .current-price").first().text().replace(/[^0-9.]/g, "");
     const price = parseFloat(priceText);
     const link = $(el).find("a[href]").first().attr("href");
     if (title && price > 0 && link && !$(el).text().toLowerCase().includes("sold out")) {
@@ -92,26 +79,23 @@ function extractProducts(html, baseUrl) {
 }
 
 const RETAILERS = [
-  { name: "Miniso", base: "https://minisouk.com", url: "https://minisouk.com/collections/pokemon" },
-  { name: "Total Cards", base: "https://totalcards.net", url: "https://totalcards.net/collections/pokemon-trading-card-game" },
-  { name: "Japan2UK", base: "https://japan2uk.com", url: "https://japan2uk.com/collections/pokemon-english" },
-  { name: "Titan Cards", base: "https://titancards.co.uk", url: "https://titancards.co.uk/collections/pokemon-sealed-product" },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", url: "https://doublesleeved.co.uk/collections/pokemon" },
-  { name: "The Card Vault", base: "https://thecardvault.co.uk", url: "https://thecardvault.co.uk/collections/pokemon-sealed-product" },
-  { name: "Cosmic Col.", base: "https://cosmiccollectables.co.uk", url: "https://cosmiccollectables.co.uk/collections/pokemon" },
-  { name: "My TCG", base: "https://mytcg.co.uk", url: "https://mytcg.co.uk/collections/pokemon-sealed-product" }
+  { name: "Miniso", base: "https://minisouk.com", url: "https://minisouk.com/search?q=pokemon" },
+  { name: "Total Cards", base: "https://totalcards.net", url: "https://totalcards.net/search?q=pokemon+sealed" },
+  { name: "Japan2UK", base: "https://japan2uk.com", url: "https://japan2uk.com/search?q=pokemon+english" },
+  { name: "Titan Cards", base: "https://titancards.co.uk", url: "https://titancards.co.uk/search?q=pokemon+sealed" },
+  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", url: "https://doublesleeved.co.uk/search?q=pokemon" },
+  { name: "The Card Vault", base: "https://thecardvault.co.uk", url: "https://thecardvault.co.uk/search?q=pokemon+sealed" },
+  { name: "Cosmic Col.", base: "https://cosmiccollectables.co.uk", url: "https://cosmiccollectables.co.uk/search?q=pokemon" },
+  { name: "My TCG", base: "https://mytcg.co.uk", url: "https://mytcg.co.uk/search?q=pokemon+sealed" }
 ];
 
 const notified = new Set();
 
 async function runScan() {
-  console.log(`🔍 STEALTH SCAN Started: ${new Date().toLocaleTimeString()}`);
+  console.log(`🔍 RECOVERY SCAN Started: ${new Date().toLocaleTimeString()}`);
   for (const shop of RETAILERS) {
     const html = await fetchPage(shop.url);
-    if (!html) { 
-      console.log(`  → ${shop.name} (Blocked/Failed)`); 
-      continue; 
-    }
+    if (!html) { console.log(`  → ${shop.name} (Failed)`); continue; }
     const items = extractProducts(html, shop.base);
     console.log(`  → ${shop.name} (${items.length} items found)`);
     for (const item of items) {
