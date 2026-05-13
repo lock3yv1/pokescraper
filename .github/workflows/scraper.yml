@@ -2,8 +2,8 @@ name: PokeScraper 2026 Pro
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour
-  workflow_dispatch: # Allows manual run
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -16,7 +16,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # Removed cache: 'npm' to prevent lockfile error
 
       - name: Install Dependencies
         run: npm install node-fetch cheerio
@@ -25,10 +25,4 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ -f index.js ]; then
-            node index.js
-          else
-            echo "Error: index.js not found in root directory"
-            exit 1
-          fi
+        run: node index.js
