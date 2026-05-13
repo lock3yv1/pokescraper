@@ -11,19 +11,16 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install Dependencies
         run: npm install node-fetch
-
-      - name: Run Scraper
+      - name: Run Intelligence Engine
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           node index.js
-          sleep 5 # Ensures Telegram requests finish before the runner kills the job
+          sleep 10 # Buffer for Telegram API delivery
