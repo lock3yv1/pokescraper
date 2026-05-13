@@ -4,60 +4,89 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// 1. THE TRUTH TABLE
 const MARKET_DATA = {
-  "chaos rising": { box: 155, etb: 55, bundle: 32, strategy: "New Release 🚀" }, // Drops May 22
-  "151": { box: 190, bundle: 72, etb: 85, upc: 155, strategy: "Restock Priority 🚨" },
-  "evolving skies": { box: 880, etb: 210, strategy: "Grail 💎" },
-  "prismatic evolutions": { box: 235, etb: 115, bundle: 58, strategy: "High Demand 🔥" },
-  "surging sparks": { box: 165, etb: 65, bundle: 65, strategy: "Mainline 📈" }
+  "151": { box: 190, bundle: 70, etb: 85, upc: 150, strategy: "Long Term 💎" },
+  "evolving skies": { box: 880, etb: 210, strategy: "Long Term 💎" },
+  "prismatic evolutions": { box: 235, etb: 110, bundle: 55, strategy: "High Demand 🔥" },
+  "surging sparks": { box: 165, etb: 65, bundle: 65, strategy: "Medium Term 📈" },
+  "ascended heroes": { box: 190, etb: 90, bundle: 60, strategy: "Medium Term 📈" },
+  "destined rivals": { box: 165, etb: 85, bundle: 75, strategy: "Medium Term 📈" },
+  "chaos rising": { box: 155, etb: 55, bundle: 32, strategy: "New Release 🚀" }
 };
 
 const RETAILERS = [
-  // High Priority: Frequent Restockers
-  "https://www.smyths toys.com/uk/en-gb/search/?text=pokemon", 
-  "https://www.argos.co.uk/search/pokemon-cards/",
-  "https://www.pokemoncenter.com/en-gb/category/trading-card-game",
-  "https://www.game.co.uk/en/trading-cards/pokemon/",
-  "https://www.toyspany.com/pokemon",
-  // Specialist TCG Shops (Broad Coverage)
-  "https://www.magicmadhouse.co.uk", "https://www.chaoscards.co.uk", "https://www.totalcards.net", 
-  "https://www.zatu.co.uk", "https://www.waylandgames.co.uk", "https://japan2uk.com",
-  "https://thecardvault.co.uk", "https://doublesleeved.co.uk", "https://mytcg.co.uk",
-  "https://hillscards.co.uk", "https://cosmiccollectables.co.uk", "https://thepokecave.co.uk",
-  "https://geeky-zone.com", "https://brotherhoodgames.co.uk", "https://gatheringgames.co.uk",
-  // The "Hidden" Sellers
-  "https://www.waterstones.com/category/toys-games/pokemon", "https://www.hamleys.com/pokemon",
-  "https://www.johnlewis.com/search?search-term=pokemon+cards", "https://www.selfridges.com/GB/en/cat/?freeText=pokemon",
-  "https://www.menkind.co.uk/search-results?q=pokemon", "https://www.forbiddenplanet.com/catalog/?q=pokemon",
-  "https://www.jarrolds.co.uk/search?q=pokemon", "https://www.whsmith.co.uk/search/?q=pokemon"
+  "https://japan2uk.com", "https://thecardvault.co.uk", "https://doublesleeved.co.uk",
+  "https://mytcg.co.uk", "https://hillscards.co.uk", "https://cosmiccollectables.co.uk",
+  "https://thepokecave.co.uk", "https://geeky-zone.com", "https://brotherhoodgames.co.uk",
+  "https://gatheringgames.co.uk", "https://pokemonplug.com", "https://totalcards.net",
+  "https://minisouk.com"
 ];
 
-async function run() {
-  console.log(`🛰️ SNIPER ACTIVE: Monitoring 40 UK Retailers...`);
-  const notified = new Set();
+// Helper to analyze the deal
+function getAnalysis(title, price) {
+  const t = title.toLowerCase();
+  let type = t.includes("box") ? "box" : t.includes("etb") ? "etb" : t.includes("bundle") ? "bundle" : null;
+  if (!type) return null;
 
-  for (const url of RETAILERS) {
+  let setKey = null;
+  for (const set in MARKET_DATA) { if (t.includes(set)) { setKey = set; break; } }
+  if (!setKey) return null;
+
+  const resell = MARKET_DATA[setKey][type];
+  const net = (resell * 0.87) - price - 4; // 13% fees, £4 ship
+  
+  return { 
+    resell, 
+    flip: net.toFixed(2), 
+    isDeal: net > 2.00, 
+    strategy: MARKET_DATA[setKey].strategy 
+  };
+}
+
+async function run() {
+  console.log("🚀 ENGINE STARTED: Scanning for stock...");
+  
+  // HEARTBEAT: Tell Telegram we are alive
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: "🤖 Scraper is ONLINE and searching..." })
+  });
+
+  for (const base of RETAILERS) {
+    console.log(`🔎 Checking: ${base}`);
     try {
-      const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..." } });
+      const res = await fetch(`${base}/search?q=pokemon`, { 
+        headers: { "User-Agent": "Mozilla/5.0" } 
+      });
       if (!res.ok) continue;
       const html = await res.text();
       const $ = cheerio.load(html);
 
-      // Scrape Logic (Generic Selectors to fit more shops)
-      $(".product, .item, .card, .grid-item").each((_, el) => {
-        const title = $(el).find("[class*='title'], h2, h3").text().trim();
-        const price = parseFloat($(el).find("[class*='price']").text().replace(/[^0-9.]/g, ""));
+      $(".product-card, .product-item, .grid__item, .product").each(async (_, el) => {
+        const title = $(el).find("h2, h3, .title").text().trim();
+        const price = parseFloat($(el).find(".price, .money, .amount").text().replace(/[^0-9.]/g, ""));
         const link = $(el).find("a").attr("href");
-        
-        // CHECK IF IN STOCK (Skip if the card says "Sold Out")
+
         if (title && price && !$(el).text().toLowerCase().includes("sold out")) {
-          const analysis = getAnalysis(title, price); // From previous version
-          if (analysis && analysis.isDeal) {
-             // PING TELEGRAM
+          const analysis = getAnalysis(title, price);
+          
+          // CRITICAL: We are pinging EVERY match now so you can see it working
+          if (analysis) {
+            const status = analysis.isDeal ? "✅ DEAL" : "❌ NO MARGIN";
+            const msg = `${status}\n<b>${title}</b>\n💰 Buy: £${price}\n📈 Market: £${analysis.resell}\n🏷️ Flip: £${analysis.flip}\n\n<a href="${base}${link}">Link</a>`;
+            
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" })
+            });
           }
         }
       });
-    } catch (e) { console.log(`Skipping shop due to error: ${url}`); }
-    await wait(500); // Quick rotation
+    } catch (e) { console.error(`Error on ${base}`); }
+    await wait(1000);
   }
 }
+
+// THE SPARK: This actually runs the code
+run().catch(console.error);
