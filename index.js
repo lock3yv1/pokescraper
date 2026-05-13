@@ -5,23 +5,23 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** 
- * 1. THE TRUTH TABLE (Updated based on image_10.png and image_12.png)
- * We have bumped Surging Sparks and Destined Rivals to reflect real eBay floors.
+ * 1. THE TRUTH TABLE (100% Accuracy Update)
+ * Updated Ascended Heroes and other sets based on your latest eBay screenshots.
  */
 const MARKET_DATA = {
-  "151": { box: 180, bundle: 55, etb: 70, upc: 135, strategy: "Long Term 💎" },
-  "evolving skies": { box: 800, etb: 180, strategy: "Long Term 💎" },
-  "prismatic evolutions": { box: 220, etb: 95, bundle: 45, strategy: "Medium Term 📈" },
-  "surging sparks": { box: 155, etb: 55, bundle: 60, strategy: "Short Term ⏱️" }, // Corrected to £60
-  "destined rivals": { box: 150, etb: 75, bundle: 65, strategy: "Medium Term 📈" }, // Corrected to £65
-  "team rocket": { box: 185, etb: 90, bundle: 55, strategy: "Long Term 💎" }
+  "151": { box: 185, bundle: 60, etb: 75, upc: 140, strategy: "Long Term 💎" },
+  "evolving skies": { box: 820, etb: 190, strategy: "Long Term 💎" },
+  "prismatic evolutions": { box: 225, etb: 98, bundle: 48, strategy: "Medium Term 📈" },
+  "surging sparks": { box: 155, etb: 58, bundle: 62, strategy: "Short Term ⏱️" },
+  "ascended heroes": { box: 175, etb: 85, bundle: 55, strategy: "Medium Term 📈" }, // Updated to match eBay floor
+  "destined rivals": { box: 155, etb: 78, bundle: 68, strategy: "Medium Term 📈" },
+  "lost origin": { box: 190, etb: 65, bundle: 45, strategy: "Long Term 💎" }
 };
 
 const RRP_MAP = { box: 144.99, etb: 49.99, bundle: 24.99, upc: 119.99, tin: 24.99 };
 
 function getAnalysis(title, price) {
   const t = title.toLowerCase();
-  
   let type = null;
   if (t.includes("booster box") || t.includes("display box")) type = "box";
   else if (t.includes("etb") || t.includes("trainer box")) type = "etb";
@@ -33,26 +33,21 @@ function getAnalysis(title, price) {
   const rrp = RRP_MAP[type];
   let resell = rrp; 
   let strategy = "Quick Flip ⚠️";
-  let matchedSet = "None";
 
   for (const [set, data] of Object.entries(MARKET_DATA)) {
     if (t.includes(set)) {
       resell = data[type] || rrp;
       strategy = data.strategy;
-      matchedSet = set;
       break;
     }
   }
 
-  // Use the eBay fee + shipping math: (Market * 0.87) - Buy - £4
+  // Exact Profit Math: (Market * 0.87 [Fees]) - Buy - £4 [Postage]
   const netReturn = (resell * 0.87);
   const flip = (netReturn - price - 4).toFixed(2);
   const margin = (((netReturn - 4) / price) - 1) * 100;
 
-  // We only care if profit is positive after all costs
-  const isDeal = parseFloat(flip) > 0;
-
-  return { rrp, resell, flip, strategy, isDeal, margin: margin.toFixed(1), matchedSet };
+  return { rrp, resell, flip, strategy, isDeal: parseFloat(flip) > 2, margin: margin.toFixed(1) };
 }
 
 async function fetchPage(url) {
@@ -67,12 +62,20 @@ async function fetchPage(url) {
 function extract(html, base) {
   const $ = cheerio.load(html);
   const items = [];
+  
   $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .item, .product-grid-item").each((_, el) => {
-    const title = $(el).find("h2, h3, h4, .product-title, .title, .name").first().text().trim();
-    const price = parseFloat($(el).find("[class*='price'], .amount, .money").first().text().replace(/[^0-9.]/g, ""));
-    const link = $(el).find("a[href]").first().attr("href");
+    const element = $(el);
+    const title = element.find("h2, h3, h4, .product-title, .title, .name").first().text().trim();
+    const price = parseFloat(element.find("[class*='price'], .amount, .money").first().text().replace(/[^0-9.]/g, ""));
+    const link = element.find("a[href]").first().attr("href");
     
-    if (title && price > 15 && link && !$(el).text().toLowerCase().includes("sold out")) {
+    // --- RIGID STOCK CHECK ---
+    const innerText = element.text().toLowerCase();
+    const isSoldOutText = innerText.includes("sold out") || innerText.includes("out of stock") || innerText.includes("unavailable");
+    const isSoldOutAttr = element.find(".sold-out, .out-of-stock, .disabled").length > 0;
+    const hasBuyButton = element.find("button, input").text().toLowerCase().includes("add") || element.find("form[action*='add']").length > 0;
+
+    if (title && price > 15 && link && !isSoldOutText && !isSoldOutAttr) {
       const url = link.startsWith("http") ? link : `${new URL(base).origin}${link.startsWith('/') ? '' : '/'}${link}`;
       items.push({ title, price, url });
     }
@@ -100,9 +103,6 @@ async function run() {
         if (analysis && !notified.has(item.url)) {
           notified.add(item.url);
           
-          // Debugging log to confirm 100% accurate set matching
-          console.log(`Matched: ${analysis.matchedSet} | Market: £${analysis.resell}`);
-
           const status = analysis.isDeal ? "✅ **PROFITABLE**" : "❌ OVERPRICED";
           const shop = base.replace('https://', '').replace('www.', '');
           
