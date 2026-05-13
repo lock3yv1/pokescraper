@@ -53,19 +53,34 @@ function getMatch(title, list) {
   return best ? best.v : null;
 }
 
+// THE BLOCK BYPASS FETCH
 async function fetchPage(url) {
   try {
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" } });
+    const res = await fetch(url, { 
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Upgrade-Insecure-Requests": "1"
+      } 
+    });
     return res.ok ? await res.text() : null;
-  } catch { return null; }
+  } catch (err) {
+    return null;
+  }
 }
 
 function extractProducts(html, baseUrl) {
   const $ = cheerio.load(html);
   const items = [];
-  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4").each((_, el) => {
-    const title = $(el).find("h2, h3, h4, .product-title, .title, .name").first().text().replace(/\s+/g, ' ').trim();
-    const priceText = $(el).find("[class*='price'], .amount, .current-price").first().text().replace(/[^0-9.]/g, "");
+  $(".product-item, .product-card, .grid__item, .card-wrapper, .product-block, .product, .col-sm-4, .item").each((_, el) => {
+    const title = $(el).find("h2, h3, h4, .product-title, .title, .name, .product-name").first().text().replace(/\s+/g, ' ').trim();
+    const priceText = $(el).find("[class*='price'], .amount, .current-price, .money").first().text().replace(/[^0-9.]/g, "");
     const price = parseFloat(priceText);
     const link = $(el).find("a[href]").first().attr("href");
     if (title && price > 0 && link && !$(el).text().toLowerCase().includes("sold out")) {
@@ -90,10 +105,13 @@ const RETAILERS = [
 const notified = new Set();
 
 async function runScan() {
-  console.log(`🔍 BROAD SCAN Started: ${new Date().toLocaleTimeString()}`);
+  console.log(`🔍 STEALTH SCAN Started: ${new Date().toLocaleTimeString()}`);
   for (const shop of RETAILERS) {
     const html = await fetchPage(shop.url);
-    if (!html) { console.log(`  → ${shop.name} (Fetch Failed)`); continue; }
+    if (!html) { 
+      console.log(`  → ${shop.name} (Blocked/Failed)`); 
+      continue; 
+    }
     const items = extractProducts(html, shop.base);
     console.log(`  → ${shop.name} (${items.length} items found)`);
     for (const item of items) {
@@ -105,15 +123,8 @@ async function runScan() {
           const diff = Math.round(((item.price - rrp) / rrp) * 100);
           const flip = (resell - item.price - (resell * 0.13) - 4).toFixed(2);
           const score = diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
-          
-          // EXACT ORIGINAL TELEGRAM STRUCTURE RESTORED
           const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${rrp.toFixed(2)} (${diff > 0 ? "+" : ""}${diff}%)\n📈 RESELL: £${resell.toFixed(2)}\n🏷️ FLIP: £${flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
-          
-          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
-          });
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) });
         }
       }
     }
