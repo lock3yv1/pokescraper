@@ -23,15 +23,19 @@ const EXCLUDE = ["single", "promo", "graded", "psa", "sleeve", "binder", "playma
 
 function getAnalysis(title, price) {
   const t = title.toLowerCase();
+  
+  // Strict block on singles and promos
   if (EXCLUDE.some(k => t.includes(k))) return null;
   if (!PRODUCT_KEYWORDS.some(k => t.includes(k))) return null;
 
+  // Accurately assign RRP based on product type
   let rrpVal = null;
   for (const [key, val] of Object.entries(RRP)) {
     if (t.includes(key)) { rrpVal = val; break; }
   }
   if (!rrpVal) return null;
 
+  // Accurately assign Resell or default to +15%
   let resellVal = null;
   for (const [key, val] of Object.entries(RESELL)) {
     if (t.includes(key)) { resellVal = val; break; }
@@ -45,21 +49,10 @@ function getAnalysis(title, price) {
 }
 
 async function fetchPage(url) {
-  const agents = [
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-  ];
-
   try {
+    // Reverted to the simple header that successfully connected in your very first log
     const res = await fetch(url, { 
-      headers: { 
-        "User-Agent": agents[Math.floor(Math.random() * agents.length)],
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-GB,en;q=0.5",
-        "DNT": "1",
-        "Upgrade-Insecure-Requests": "1"
-      } 
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" } 
     });
     return res.ok ? await res.text() : null;
   } catch { return null; }
@@ -74,6 +67,7 @@ function extract(html, base) {
     const price = parseFloat(priceText);
     const link = $(el).find("a[href]").first().attr("href");
     
+    // Price floor > 12 to double-check no cheap singles slip through
     if (title && price > 12 && link && !$(el).text().toLowerCase().includes("sold out")) {
       const url = link.startsWith("http") ? link : `${new URL(base).origin}${link.startsWith('/') ? '' : '/'}${link}`;
       items.push({ title, price, url });
@@ -83,37 +77,52 @@ function extract(html, base) {
 }
 
 const RETAILERS = [
-  { name: "Miniso", url: "https://minisouk.com/collections/pokemon" },
-  { name: "Japan2UK", url: "https://japan2uk.com/collections/pokemon-english" },
-  { name: "The Card Vault", url: "https://thecardvault.co.uk/collections/pokemon-sealed-product" },
-  { name: "Double Sleeved", url: "https://doublesleeved.co.uk/collections/pokemon" },
-  { name: "Total Cards", url: "https://www.totalcards.net/pokemon/sealed-product" },
-  { name: "My TCG", url: "https://mytcg.co.uk/collections/pokemon-sealed-product" }
+  "https://minisouk.com", "https://japan2uk.com", "https://thecardvault.co.uk",
+  "https://doublesleeved.co.uk", "https://www.totalcards.net", "https://mytcg.co.uk"
 ];
 
+// Instead of hitting the blocked collection pages, we search for broad terms
+const QUERIES = ["pokemon+booster+box", "pokemon+elite+trainer", "pokemon+bundle"];
+
 async function run() {
-  console.log(`🚀 STEALTH SCAN: ${new Date().toLocaleTimeString()}`);
+  console.log(`🚀 ANTI-BLOCK SCAN STARTED...`);
   const notified = new Set();
-  for (const shop of RETAILERS) {
-    console.log(`Checking ${shop.name}...`);
-    const html = await fetchPage(shop.url);
-    if (!html) { console.log(`  ⚠️ Still Blocked`); continue; }
 
-    const items = extract(html, shop.url);
-    for (const item of items) {
-      const analysis = getAnalysis(item.title, item.price);
-      if (analysis && !notified.has(item.url)) {
-        notified.add(item.url);
-        const score = analysis.diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
-        const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shop.name}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${analysis.rrp.toFixed(2)} (${analysis.diff > 0 ? "+" : ""}${analysis.diff}%)\n📈 RESELL: £${analysis.resell.toFixed(2)}\n🏷️ FLIP: £${analysis.flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
+  for (const base of RETAILERS) {
+    console.log(`Checking ${base}...`);
+    let foundItems = 0;
 
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
-          method: "POST", headers: { "Content-Type": "application/json" }, 
-          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
-        });
+    for (const q of QUERIES) {
+      const url = `${base}/search?q=${q}`;
+      const html = await fetchPage(url);
+      if (!html) continue;
+
+      const items = extract(html, base);
+      foundItems += items.length;
+
+      for (const item of items) {
+        const analysis = getAnalysis(item.title, item.price);
+        if (analysis && !notified.has(item.url)) {
+          notified.add(item.url);
+          const score = analysis.diff <= 5 ? "🔥 DEAL" : "❌ OVERPRICED";
+          const shopName = base.replace('https://', '').replace('www.', '');
+          
+          const msg = `${score}\n\n<b>${item.title}</b>\n🏪 ${shopName}\n💰 BUY: £${item.price.toFixed(2)}\n📊 RRP: £${analysis.rrp.toFixed(2)} (${analysis.diff > 0 ? "+" : ""}${analysis.diff}%)\n📈 RESELL: £${analysis.resell.toFixed(2)}\n🏷️ FLIP: £${analysis.flip}\n\n👉 <a href="${item.url}">BUY NOW →</a>`;
+
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, { 
+            method: "POST", headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: "HTML" }) 
+          });
+        }
       }
+      await wait(1500); // 1.5s wait between queries
     }
-    await wait(3000); // Longer wait to prevent IP flags
+    
+    if (foundItems === 0) {
+      console.log(`  ⚠️ Blocked or 0 items found.`);
+    } else {
+      console.log(`  ✅ Scanned ${foundItems} total items from search.`);
+    }
   }
 }
 
