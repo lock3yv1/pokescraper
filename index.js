@@ -952,24 +952,6 @@ const RETAILERS = [
     ],
   },
 ];
-    urls: [
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
-    ],
-  },
-  {
-    name: "Amazon UK", base: "https://www.amazon.co.uk", type: "html",
-    urls: [
-      "https://www.amazon.co.uk/s?k=pokemon+booster+box+english&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+evolving+skies+booster+box&rh=p_85%3A1",
-    ],
-  },
-];
 
 // Tracks last seen price per product — enables price drop alerts
 // key = "RetailerName::product title lowercase"
