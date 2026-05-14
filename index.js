@@ -436,17 +436,26 @@ const HOLD_DATA = {
 
 // ─── VALID ENGLISH POKEMON SETS ────────────────────────────────────────────
 const ENGLISH_SETS = [
+  // Mega Evolution era
   "ascended heroes", "destined rivals", "perfect order", "chaos rising", "phantasmal flames",
+  // Scarlet & Violet
   "journey together", "prismatic evolutions", "surging sparks", "stellar crown",
   "shrouded fable", "twilight masquerade", "temporal forces", "paradox rift",
   "obsidian flames", "paldea evolved", "paldean fates", "scarlet & violet",
-  "scarlet and violet", "151", "crown zenith", "silver tempest", "lost origin",
-  "astral radiance", "brilliant stars", "fusion strike", "evolving skies",
-  "chilling reign", "battle styles", "shining fates", "vivid voltage",
-  "champions path", "darkness ablaze", "rebel clash", "sword & shield",
+  "scarlet and violet", "scarlet violet", "151",
+  // Sword & Shield
+  "crown zenith", "silver tempest", "lost origin", "astral radiance",
+  "brilliant stars", "fusion strike", "evolving skies", "chilling reign",
+  "battle styles", "shining fates", "vivid voltage", "champions path",
+  "darkness ablaze", "rebel clash", "sword & shield", "sword and shield",
+  // Sun & Moon
   "hidden fates", "cosmic eclipse", "unified minds", "unbroken bonds",
   "team up", "lost thunder", "celestial storm", "forbidden light",
   "ultra prism", "burning shadows", "guardians rising", "sun & moon",
+  // League battle decks (these have set names in them)
+  "league battle deck", "ex league battle deck",
+  // Catch-all for mega evolution branded products
+  "mega evolution",
 ];
 
 // ─── SEALED PRODUCT TYPES ──────────────────────────────────────────────────
@@ -474,22 +483,28 @@ const PRODUCT_TYPES = [
 
 // ─── HARD BLOCK ────────────────────────────────────────────────────────────
 const BLOCK = [
-  "korean", "japanese", "simplified chinese", "traditional chinese",
-  "gem pack", "sv3a", "sv4a", "sv5k", "sv6a", "sv7", "sv8", "sv9",
+  // Non-English languages
+  "korean", "japanese", "simplified chinese", "traditional chinese", "chinese",
+  "gem pack", "sv3a", "sv4a", "sv5k", "sv6a",
+  "glory of team rocket", "ruler of the black flame",
+  "ninja spinner", "mega dream ex",
+  "terastal", "wild force", "cyber judge", "clay burst",
+  // Other games
   "yugioh", "yu-gi-oh", "magic the gathering", "mtg", "digimon",
   "one piece", "dragon ball", "lorcana", "cardfight", "vanguard",
   "weiss", "buddyfight", "gundam", "naruto", "flesh and blood",
-  "code card", "online code", "live code", "single", "graded",
-  "psa", "bgs", "cgc", "lot of", "proxy", "fake",
-  "sleeve", "playmat", "binder", "dice", "bulk", "funko", "plush",
-  "etb case", "booster box case", "case of",
-  "korean booster", "japanese booster", "japanese pokemon",
-  "glory of team rocket", "ruler of the black flame",
-  "ninja spinner", "mega dream ex", "chinese",
-  "terastal", "wild force", "cyber judge", "clay burst",
   "union arena", "grand archive", "star wars unlimited",
-  "sleeves", "toy figure", "coin blister", "coin card",
-  "sealed case", "booster case", "display case",
+  "riftbound", "league of legends", "panini", "bandai", "topps",
+  // Singles and non-sealed
+  "graded", "psa", "bgs", "cgc",
+  "lot of", "proxy", "fake", "replica",
+  "playmat", "binder", "dice", "bulk", "funko", "plush",
+  "etb case", "booster box case", "case of", "sealed case", "display case",
+  "holo card", "normal card", "reverse holo", "metal charm", "keychain",
+  "coin set", "blind bag", "portfolio", "binder", "figure",
+  "vinyl figure", "action figure", "toploader", "penny sleeve",
+  // Price filter catches card lots but these explicit blocks help too
+  "card lot", "common", "uncommon", "rare card",
 ];
 
 // ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
@@ -705,22 +720,23 @@ async function fetchJson(url, ms = 15000) {
 }
 
 // ─── SHOPIFY PRODUCTS JSON API ────────────────────────────────────────────────
-async function fetchShopifyProducts(baseUrl) {
+async function fetchShopifyProducts(baseUrl, customCollections) {
   const seen = new Set();
   const items = [];
 
-  // Try Pokemon-specific collections first (avoids wading through singles/other TCGs)
-  // then fall back to broad endpoints
-  const endpoints = [
-    `${baseUrl}/collections/pokemon-tcg/products.json`,
-    `${baseUrl}/collections/pokemon/products.json`,
-    `${baseUrl}/collections/pokemon-sealed/products.json`,
-    `${baseUrl}/collections/sealed-product/products.json`,
-    `${baseUrl}/collections/sealed/products.json`,
-    `${baseUrl}/collections/trading-cards/products.json`,
-    `${baseUrl}/products.json`,
-    `${baseUrl}/collections/all/products.json`,
+  // Use retailer-specific collections if provided, otherwise try defaults
+  const collectionPaths = customCollections || [
+    "/collections/pokemon-tcg",
+    "/collections/pokemon-sealed-products",
+    "/collections/pokemon-sealed",
+    "/collections/pokemon",
+    "/collections/all",
+    "",  // products.json root
   ];
+
+  const endpoints = collectionPaths.map(path =>
+    path ? `${baseUrl}${path}/products.json` : `${baseUrl}/products.json`
+  );
 
   let workingEndpoint = null;
   for (const ep of endpoints) {
@@ -729,9 +745,8 @@ async function fetchShopifyProducts(baseUrl) {
       workingEndpoint = ep;
       break;
     }
-    // No delay between probes — 404s fail instantly, no rate-limit risk
   }
-  if (!workingEndpoint) return items;
+  if (!workingEndpoint) { console.log(`    No working endpoint found`); return items; }
 
   for (let page = 1; page <= 5; page++) {
     const url = `${workingEndpoint}?limit=250&page=${page}`;
@@ -878,22 +893,65 @@ const CORE_SEARCHES = [
 
 // ─── RETAILERS ───────────────────────────────────────────────────────────────
 const RETAILERS = [
-  // Shopify JSON API retailers — most reliable
-  { name: "Total Cards",    base: "https://totalcards.net",       type: "shopify-json" },
-  { name: "Titan Cards",    base: "https://titancards.co.uk",     type: "shopify-json" },
-  { name: "Eterna Cards",   base: "https://eternacards.co.uk",    type: "shopify-json" },
-  { name: "PACKRAT",        base: "https://packratt.co.uk",       type: "shopify-json" },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk",  type: "shopify-json" },
-  { name: "Toys N Geek",    base: "https://www.toysngeek.co.uk",  type: "shopify-json" },
-  { name: "The Card Vault", base: "https://thecardvault.co.uk",   type: "shopify-json" },
-  { name: "My TCG",         base: "https://mytcg.co.uk",          type: "shopify-json" },
-  { name: "Gathering Games",base: "https://gatheringgames.co.uk", type: "shopify-json" },
-  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",  type: "shopify-json" },
-  { name: "Chaos Cards",    base: "https://www.chaoscards.co.uk", type: "shopify-json" },
-  { name: "Japan2UK",       base: "https://japan2uk.com",         type: "shopify-json" },
-  // HTML retailers
+  {
+    name: "Total Cards", base: "https://totalcards.net", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes",
+      "/collections/pokemon-tins", "/collections/pokemon-booster-bundles",
+      "/collections/pokemon-sealed-product", "/collections/pokemon",
+    ],
+  },
+  { name: "Titan Cards",    base: "https://titancards.co.uk",    type: "shopify-json" },
+  {
+    name: "Eterna Cards", base: "https://eternacards.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes",
+      "/collections/pokemon-half-boxes", "/collections/pokemon-tcg-sealed-products",
+      "/collections/pokemon-sealed", "/collections/pokemon",
+    ],
+  },
+  { name: "PACKRAT",        base: "https://packratt.co.uk",      type: "shopify-json" },
+  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", type: "shopify-json" },
+  {
+    name: "Toys N Geek", base: "https://www.toysngeek.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon"],
+  },
+  {
+    name: "The Card Vault", base: "https://thecardvault.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-sealed-products", "/collections/pokemon-booster-boxes",
+      "/collections/pokemon-tcg", "/collections/pokemon",
+    ],
+  },
+  { name: "My TCG",         base: "https://mytcg.co.uk",         type: "shopify-json" },
+  { name: "Gathering Games",base: "https://gatheringgames.co.uk",type: "shopify-json" },
+  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json" },
+  {
+    name: "Japan2UK", base: "https://japan2uk.com", type: "shopify-json",
+    collections: [
+      "/collections/english-pokemon", "/collections/pokemon-english",
+      "/collections/pokemon-sealed", "/collections/pokemon",
+    ],
+  },
   {
     name: "Smyths", base: "https://www.smythstoys.com", type: "html",
+    urls: [
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
+    ],
+  },
+  {
+    name: "Amazon UK", base: "https://www.amazon.co.uk", type: "html",
+    urls: [
+      "https://www.amazon.co.uk/s?k=pokemon+booster+box+english&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
+    ],
+  },
+];
     urls: [
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
@@ -1085,7 +1143,7 @@ async function runScan() {
     console.log(`  → ${retailer.name}`);
 
     if (retailer.type === "shopify-json") {
-      const items = await fetchShopifyProducts(retailer.base);
+      const items = await fetchShopifyProducts(retailer.base, retailer.collections);
       console.log(`    ${items.length} products fetched`);
 
       let debugCount = 0;
