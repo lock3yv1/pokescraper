@@ -537,12 +537,26 @@ function getPriceLimits(title) {
 function isValidProduct(title, price) {
   const t = title.toLowerCase();
   const tn = normaliseTitle(title);
-  if (BLOCK.some(k => t.includes(k))) return false;
+  const blocked = BLOCK.find(k => t.includes(k));
+  if (blocked) return false;
   if (!PRODUCT_TYPES.some(k => tn.includes(normaliseTitle(k)))) return false;
   if (!ENGLISH_SETS.some(s => tn.includes(normaliseTitle(s)))) return false;
   const limits = getPriceLimits(title);
   if (price < limits.min || price > limits.max) return false;
   return true;
+}
+
+// Debug version — logs why a product fails (use temporarily)
+function debugProduct(title, price) {
+  const t = title.toLowerCase();
+  const tn = normaliseTitle(title);
+  const blocked = BLOCK.find(k => t.includes(k));
+  if (blocked) return `BLOCKED by "${blocked}"`;
+  if (!PRODUCT_TYPES.some(k => tn.includes(normaliseTitle(k)))) return `NO PRODUCT TYPE in: ${tn.slice(0,60)}`;
+  if (!ENGLISH_SETS.some(s => tn.includes(normaliseTitle(s)))) return `NO SET MATCH in: ${tn.slice(0,60)}`;
+  const limits = getPriceLimits(title);
+  if (price < limits.min || price > limits.max) return `PRICE £${price} outside [£${limits.min}-£${limits.max}]`;
+  return "VALID";
 }
 
 // Higher priority products always shown — packs only if profitable flip
@@ -1074,8 +1088,15 @@ async function runScan() {
       const items = await fetchShopifyProducts(retailer.base);
       console.log(`    ${items.length} products fetched`);
 
+      let debugCount = 0;
       for (const item of items) {
-        if (!isValidProduct(item.title, item.price)) continue;
+        if (!isValidProduct(item.title, item.price)) {
+          if (debugCount < 3) {
+            console.log(`    ❌ ${debugProduct(item.title, item.price)}: "${item.title}" £${item.price}`);
+            debugCount++;
+          }
+          continue;
+        }
 
         // For booster packs — only alert if profitable to flip
         const priority = getProductPriority(item.title);
