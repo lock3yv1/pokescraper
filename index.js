@@ -42,347 +42,297 @@ const RRP = {
 };
 
 // ─── MARKET PRICES (eBay UK SOLD listings) ─────────────────────────────────
-// Updated May 2026 — sources: eBay UK completed listings, PriceCharting, TCGPlayer
-// These are median sold prices for sealed products in Good/Near Mint condition
+// Updated May 14 2026 — eBay UK completed listings median sold prices
+// Source: eBay UK sold, PriceCharting, CardChill, GamesRadar tracking
 const MARKET = {
   // ── MEGA EVOLUTION ERA (2026) ──────────────────────────────────────────
-  // Ascended Heroes (SV-ME01) – released Jan-Apr 2026, NO traditional booster box
-  "ascended heroes elite trainer box":  65,
-  "ascended heroes etb":                65,
-  "ascended heroes booster bundle":     38,
-  "ascended heroes half booster box":   95,
-  "ascended heroes half box":           95,
-  "ascended heroes booster pack":        7,
+  // Ascended Heroes (ME01) — eBay UK boxes £110-140, median ~£125
+  "ascended heroes booster box":        125,
+  "ascended heroes elite trainer box":   62,
+  "ascended heroes etb":                 62,
+  "ascended heroes booster bundle":      35,
+  "ascended heroes half booster box":    72,
+  "ascended heroes half box":            72,
+  "ascended heroes booster pack":         7,
+  "ascended heroes blister":             14,
+  "ascended heroes tin":                 28,
 
-  // Destined Rivals (SV-ME02) — median eBay UK sold £95-110 (active £85-120)
-  "destined rivals booster box":       105,
-  "destined rivals elite trainer box":  52,
-  "destined rivals etb":                52,
-  "destined rivals booster bundle":     28,
-  "destined rivals half booster box":   62,
-  "destined rivals half box":           62,
-  "destined rivals booster pack":        5.50,
+  // Destined Rivals (ME02/SV10) — eBay UK boxes £95-115, median ~£105
+  // Half boxes £55-65, ETBs £48-55
+  "destined rivals booster box":        105,
+  "destined rivals elite trainer box":   52,
+  "destined rivals etb":                 52,
+  "destined rivals booster bundle":      28,
+  "destined rivals half booster box":    60,
+  "destined rivals half box":            60,
+  "destined rivals booster pack":         5.50,
+  "destined rivals blister":             12,
+  "destined rivals tin":                 25,
 
-  // Perfect Order (SV-ME03) — released Mar 2026, UK retail ~£160-170
-  "perfect order booster box":         165,
-  "perfect order elite trainer box":    65,
-  "perfect order etb":                  65,
-  "perfect order booster bundle":       35,
-  "perfect order booster pack":          8,
+  // Perfect Order (ME03) — eBay UK boxes £115-145, median ~£130
+  "perfect order booster box":          130,
+  "perfect order elite trainer box":     60,
+  "perfect order etb":                   60,
+  "perfect order booster bundle":        32,
+  "perfect order booster pack":           7.50,
+  "perfect order tin":                   26,
 
-  // Chaos Rising (SV-ME04) — released May 22 2026 (just launched)
-  // Pre-sale and early sold data: £170-200+ booster box
-  "chaos rising booster box":          185,
-  "chaos rising elite trainer box":     70,
-  "chaos rising etb":                   70,
-  "chaos rising booster bundle":        38,
-  "chaos rising booster pack":           9,
+  // Chaos Rising (ME04) — released May 22 2026, preorders £120-160
+  "chaos rising booster box":           145,
+  "chaos rising elite trainer box":      65,
+  "chaos rising etb":                    65,
+  "chaos rising booster bundle":         35,
+  "chaos rising booster pack":            8,
+  "chaos rising tin":                    28,
 
-  // Phantasmal Flames (SV-ME05) — Pokemon Center UK RRP £143.64, sold ~£150-165
-  // Chase card hype drives above-retail sold prices
-  "phantasmal flames booster box":     160,
-  "phantasmal flames elite trainer box": 80,
-  "phantasmal flames etb":              80,
-  "phantasmal flames booster pack":     10,
+  // Phantasmal Flames (ME05) — announced, ~£150-165 predicted
+  "phantasmal flames booster box":      158,
+  "phantasmal flames elite trainer box": 75,
+  "phantasmal flames etb":               75,
+  "phantasmal flames booster pack":       9.50,
 
-  // ── SCARLET & VIOLET MAIN SERIES ──────────────────────────────────────
-  // Journey Together (SV09) — 2025 set
-  "journey together booster box":      115,
-  "journey together elite trainer box": 52,
-  "journey together etb":               52,
-  "journey together booster bundle":    28,
-  "journey together half booster box":  68,
-  "journey together half box":          68,
-  "journey together booster pack":       5,
+  // ── SCARLET & VIOLET ──────────────────────────────────────────────────
+  // Journey Together (SV09) — eBay UK £110-120 booster box
+  "journey together booster box":       115,
+  "journey together elite trainer box":  50,
+  "journey together etb":                50,
+  "journey together booster bundle":     27,
+  "journey together half booster box":   65,
+  "journey together half box":           65,
+  "journey together booster pack":        5,
+  "journey together tin":                22,
+  "journey together blister":            11,
 
-  // Prismatic Evolutions (SV08.5) — like Evolving Skies, massively popular
-  // ETBs were £150+ at launch; stabilising but staying very elevated
-  "prismatic evolutions booster box":  220,
-  "prismatic evolutions booster bundle": 90,
-  "prismatic evolutions elite trainer box": 95,
-  "prismatic evolutions etb":           95,
-  "prismatic evolutions booster pack":  18,
+  // Prismatic Evolutions (SV08.5) — iconic, ETBs still £85-100, boxes £210-230
+  "prismatic evolutions booster box":   220,
+  "prismatic evolutions booster bundle": 88,
+  "prismatic evolutions elite trainer box": 92,
+  "prismatic evolutions etb":            92,
+  "prismatic evolutions booster pack":   17,
+  "prismatic evolutions blister":        26,
+  "prismatic evolutions tin":            34,
+  "prismatic evolutions premium collection": 90,
 
-  // Surging Sparks (SV08)
-  "surging sparks booster box":        145,
-  "surging sparks elite trainer box":   58,
-  "surging sparks etb":                 58,
-  "surging sparks booster bundle":      32,
-  "surging sparks booster pack":         6,
+  // Surging Sparks (SV08) — eBay UK £135-155
+  "surging sparks booster box":         145,
+  "surging sparks elite trainer box":    56,
+  "surging sparks etb":                  56,
+  "surging sparks booster bundle":       30,
+  "surging sparks booster pack":          6,
+  "surging sparks tin":                  22,
+  "surging sparks blister":              12,
 
   // Stellar Crown (SV07)
-  "stellar crown booster box":         150,
-  "stellar crown elite trainer box":    60,
-  "stellar crown etb":                  60,
-  "stellar crown booster bundle":       32,
-  "stellar crown booster pack":          7,
+  "stellar crown booster box":          148,
+  "stellar crown elite trainer box":     58,
+  "stellar crown etb":                   58,
+  "stellar crown booster bundle":        30,
+  "stellar crown booster pack":           6.50,
+  "stellar crown tin":                   19,
 
   // Shrouded Fable (SV06.5)
-  "shrouded fable booster box":        100,
+  "shrouded fable booster box":          98,
+  "shrouded fable booster pack":          4.80,
 
   // Twilight Masquerade (SV06)
-  "twilight masquerade booster box":   120,
-  "twilight masquerade elite trainer box": 50,
-  "twilight masquerade etb":            50,
-  "twilight masquerade booster bundle":  30,
-  "twilight masquerade booster pack":     8,
+  "twilight masquerade booster box":    118,
+  "twilight masquerade elite trainer box": 48,
+  "twilight masquerade etb":             48,
+  "twilight masquerade booster bundle":  28,
+  "twilight masquerade booster pack":     7,
+  "twilight masquerade tin":             18,
 
   // Temporal Forces (SV05)
-  "temporal forces booster box":       105,
-  "temporal forces elite trainer box":  48,
-  "temporal forces etb":                48,
-  "temporal forces half booster box":   60,
-  "temporal forces half box":           60,
+  "temporal forces booster box":        102,
+  "temporal forces elite trainer box":   46,
+  "temporal forces etb":                 46,
+  "temporal forces half booster box":    58,
+  "temporal forces half box":            58,
+  "temporal forces booster pack":         5,
+  "temporal forces tin":                 17,
 
   // Paradox Rift (SV04)
-  "paradox rift booster box":          110,
-  "paradox rift elite trainer box":     50,
-  "paradox rift etb":                   50,
-  "paradox rift half booster box":      62,
-  "paradox rift half box":              62,
-  "paradox rift booster pack":           5,
+  "paradox rift booster box":           108,
+  "paradox rift elite trainer box":      48,
+  "paradox rift etb":                    48,
+  "paradox rift half booster box":       60,
+  "paradox rift half box":               60,
+  "paradox rift booster pack":            5,
+  "paradox rift tin":                    19,
 
   // Obsidian Flames (SV03)
-  "obsidian flames booster box":       120,
-  "obsidian flames elite trainer box":  52,
-  "obsidian flames etb":                52,
-  "obsidian flames booster bundle":     30,
-  "obsidian flames booster pack":       11,
+  "obsidian flames booster box":        118,
+  "obsidian flames elite trainer box":   50,
+  "obsidian flames etb":                 50,
+  "obsidian flames booster bundle":      28,
+  "obsidian flames booster pack":        10,
+  "obsidian flames tin":                 19,
 
   // Paldea Evolved (SV02)
-  "paldea evolved booster box":         95,
-  "paldea evolved booster bundle":      28,
-  "paldea evolved elite trainer box":   45,
-  "paldea evolved etb":                 45,
-  "paldea evolved booster pack":         9,
+  "paldea evolved booster box":          92,
+  "paldea evolved booster bundle":       26,
+  "paldea evolved elite trainer box":    42,
+  "paldea evolved etb":                  42,
+  "paldea evolved booster pack":          8,
+  "paldea evolved tin":                  15,
 
-  // Paldean Fates (SV04.5) — shiny vault, premium packs
-  "paldean fates booster box":         135,
-  "paldean fates booster bundle":       38,
-  "paldean fates elite trainer box":    62,
-  "paldean fates etb":                  62,
-  "paldean fates booster pack":         13,
+  // Paldean Fates (SV04.5) — shiny vault
+  "paldean fates booster box":          132,
+  "paldean fates booster bundle":        36,
+  "paldean fates elite trainer box":     60,
+  "paldean fates etb":                   60,
+  "paldean fates booster pack":          12,
+  "paldean fates tin":                   21,
 
   // Scarlet & Violet Base (SV01)
-  "scarlet violet booster box":        105,
-  "scarlet violet elite trainer box":   48,
-  "scarlet violet etb":                 48,
-  "scarlet violet booster pack":         8,
-  "scarlet violet base set booster pack": 8,
+  "scarlet violet booster box":          102,
+  "scarlet violet elite trainer box":     46,
+  "scarlet violet etb":                   46,
+  "scarlet violet booster pack":           7,
+  "scarlet violet tin":                   17,
 
-  // 151 (SV03.5) — extremely popular, always appreciating
-  "151 booster box":                   180,
-  "151 booster bundle":                 50,
-  "151 elite trainer box":              70,
-  "151 etb":                            70,
-  "151 booster pack":                    8,
+  // 151 (SV03.5) — consistently popular
+  "151 booster box":                     178,
+  "151 booster bundle":                   50,
+  "151 elite trainer box":                68,
+  "151 etb":                              68,
+  "151 booster pack":                      8,
+  "151 poster collection":                25,
 
   // ── SWORD & SHIELD ERA ────────────────────────────────────────────────
-  // Crown Zenith (SWSH12.5)
-  "crown zenith booster box":          130,
-  "crown zenith elite trainer box":     62,
-  "crown zenith etb":                   62,
-  "crown zenith booster pack":          11,
+  "crown zenith booster box":           128,
+  "crown zenith elite trainer box":      60,
+  "crown zenith etb":                    60,
+  "crown zenith booster pack":           10,
+  "crown zenith tin":                    19,
 
-  // Silver Tempest (SWSH12) — Lugia V alt art demand
-  "silver tempest booster box":        115,
-  "silver tempest elite trainer box":   55,
-  "silver tempest etb":                 55,
-  "silver tempest booster pack":        11,
+  "silver tempest booster box":         112,
+  "silver tempest elite trainer box":    52,
+  "silver tempest etb":                  52,
+  "silver tempest booster pack":         10,
+  "silver tempest tin":                  17,
 
-  // Lost Origin (SWSH11)
-  "lost origin booster box":           125,
-  "lost origin elite trainer box":      52,
-  "lost origin etb":                    52,
-  "lost origin booster pack":            9,
+  "lost origin booster box":            122,
+  "lost origin elite trainer box":       50,
+  "lost origin etb":                     50,
+  "lost origin booster pack":             8.50,
 
-  // Astral Radiance (SWSH10)
-  "astral radiance booster box":       125,
-  "astral radiance elite trainer box":  50,
-  "astral radiance etb":                50,
-  "astral radiance booster pack":        8,
+  "astral radiance booster box":        120,
+  "astral radiance elite trainer box":   48,
+  "astral radiance etb":                 48,
+  "astral radiance booster pack":         8,
 
-  // Brilliant Stars (SWSH09) — Charizard VSTAR
-  "brilliant stars booster box":       145,
-  "brilliant stars elite trainer box":  58,
-  "brilliant stars etb":                58,
-  "brilliant stars booster pack":       11,
+  "brilliant stars booster box":        142,
+  "brilliant stars elite trainer box":   56,
+  "brilliant stars etb":                 56,
+  "brilliant stars booster pack":        10,
+  "brilliant stars tin":                 18,
 
-  // Fusion Strike (SWSH08)
-  "fusion strike booster box":         140,
-  "fusion strike elite trainer box":    52,
-  "fusion strike etb":                  52,
-  "fusion strike booster pack":         10,
-  "fusion strike build battle box":     28,
+  "fusion strike booster box":          138,
+  "fusion strike elite trainer box":     50,
+  "fusion strike etb":                   50,
+  "fusion strike booster pack":           9.50,
 
-  // Evolving Skies (SWSH07) — ICONIC, Umbreon VMAX, always rising
-  "evolving skies booster box":        790,
-  "evolving skies elite trainer box":  175,
-  "evolving skies etb":                175,
-  "evolving skies booster pack":        28,
+  "evolving skies booster box":         790,
+  "evolving skies elite trainer box":   172,
+  "evolving skies etb":                 172,
+  "evolving skies booster pack":         27,
+  "evolving skies tin":                  44,
+  "evolving skies blister":              27,
 
-  // Chilling Reign (SWSH06) — Ice/Shadow Rider Calyrex
-  "chilling reign booster box":        155,
-  "chilling reign elite trainer box":   62,
-  "chilling reign etb":                 62,
-  "chilling reign booster pack":        13,
+  "chilling reign booster box":         152,
+  "chilling reign elite trainer box":    60,
+  "chilling reign etb":                  60,
+  "chilling reign booster pack":         12,
+  "chilling reign tin":                  21,
 
-  // Battle Styles (SWSH05) — Urshifu demand
-  "battle styles booster box":         175,
-  "battle styles elite trainer box":    65,
-  "battle styles etb":                  65,
-  "battle styles booster pack":         12,
+  "battle styles booster box":          172,
+  "battle styles elite trainer box":     62,
+  "battle styles etb":                   62,
+  "battle styles booster pack":          11,
+  "battle styles tin":                   21,
 
-  // Shining Fates (SWSH04.5) — premium chase set, Shiny Charizard VMAX
-  "shining fates booster box":         245,
-  "shining fates elite trainer box":   115,
-  "shining fates etb":                 115,
-  "shining fates booster pack":         17,
+  "shining fates booster box":          240,
+  "shining fates elite trainer box":    112,
+  "shining fates etb":                  112,
+  "shining fates booster pack":          16,
+  "shining fates tin":                   29,
+  "shining fates mini tins":             27,
 
-  // Vivid Voltage (SWSH04) — Pikachu VMAX era
-  "vivid voltage booster box":         145,
-  "vivid voltage elite trainer box":    58,
-  "vivid voltage etb":                  58,
-  "vivid voltage booster pack":         11,
+  "vivid voltage booster box":          142,
+  "vivid voltage elite trainer box":     56,
+  "vivid voltage etb":                   56,
+  "vivid voltage booster pack":          10,
+  "vivid voltage tin":                   19,
 
-  // Darkness Ablaze (SWSH03) — Charizard VMAX
-  "darkness ablaze booster box":       135,
-  "darkness ablaze elite trainer box":  55,
-  "darkness ablaze etb":                55,
-  "darkness ablaze booster pack":       10,
+  "darkness ablaze booster box":        132,
+  "darkness ablaze elite trainer box":   52,
+  "darkness ablaze etb":                 52,
+  "darkness ablaze booster pack":         9.50,
+  "darkness ablaze tin":                 17,
 
-  // Rebel Clash (SWSH02)
-  "rebel clash booster box":           125,
-  "rebel clash elite trainer box":      50,
-  "rebel clash etb":                    50,
-  "rebel clash booster pack":           10,
+  "rebel clash booster box":            122,
+  "rebel clash elite trainer box":       48,
+  "rebel clash etb":                     48,
+  "rebel clash booster pack":             9,
 
-  // Sword & Shield Base (SWSH01)
-  "sword shield base set booster pack": 10,
+  "sword shield booster box":           195,
+  "sword shield booster pack":           10,
 
-  // Hidden Fates (SM11.5) — ICONIC, constant appreciation
-  "hidden fates booster box":          390,
-  "hidden fates elite trainer box":    115,
-  "hidden fates etb":                  115,
-  "hidden fates booster pack":          15,
+  // ── SUN & MOON ERA ───────────────────────────────────────────────────
+  "hidden fates booster box":           385,
+  "hidden fates elite trainer box":     112,
+  "hidden fates etb":                   112,
+  "hidden fates booster pack":           14,
+  "hidden fates tin":                    44,
+  "hidden fates blister":                29,
 
-  // Cosmic Eclipse (SM12)
-  "cosmic eclipse booster box":        340,
-  "cosmic eclipse booster pack":        12,
+  "cosmic eclipse booster box":         335,
+  "cosmic eclipse booster pack":         12,
 
-  // Champions Path (SM35) — extremely limited, Shiny Charizard V
-  "champions path elite trainer box":  195,
-  "champions path booster pack":        25,
+  "champions path elite trainer box":   192,
+  "champions path etb":                 192,
+  "champions path booster pack":         24,
 
-  // Unified Minds (SM11)
-  "unified minds booster box":         245,
-  "unified minds booster pack":         10,
+  "unified minds booster box":          242,
+  "unified minds booster pack":          10,
 
-  // Unbroken Bonds (SM10)
-  "unbroken bonds booster box":        275,
-  "unbroken bonds booster pack":        11,
+  "unbroken bonds booster box":         272,
+  "unbroken bonds booster pack":         11,
 
-  // ── TINS (eBay UK sold) ─────────────────────────────────────────────────
-  // Hidden Fates tins are iconic — Shiny Charizard tin trades at a premium
-  "hidden fates tin":                   45,
-  "shining fates tin":                  30,
-  "shining fates mini tins":            28,
-  "evolving skies tin":                 45,
-  "brilliant stars tin":                22,
-  "fusion strike tin":                  20,
-  "astral radiance tin":                18,
-  "lost origin tin":                    18,
-  "silver tempest tin":                 18,
-  "crown zenith tin":                   20,
-  "paldean fates tin":                  22,
-  "obsidian flames tin":                20,
-  "paradox rift tin":                   20,
-  "temporal forces tin":                18,
-  "twilight masquerade tin":            18,
-  "stellar crown tin":                  20,
-  "surging sparks tin":                 22,
-  "prismatic evolutions tin":           35,
-  "journey together tin":               22,
-  "scarlet violet tin":                 18,
-  "paldea evolved tin":                 16,
-  "chilling reign tin":                 22,
-  "battle styles tin":                  22,
-  "vivid voltage tin":                  20,
-  "darkness ablaze tin":                18,
-  "rebel clash tin":                    18,
-  "sword shield tin":                   20,
+  // ── TINS ─────────────────────────────────────────────────────────────
+  "surging sparks tin":                  22,
+  "prismatic evolutions tin":            34,
+  "stellar crown tin":                   19,
+  "journey together tin":                22,
 
-  // ── PREMIUM & SPECIAL COLLECTIONS ──────────────────────────────────────
-  "prismatic evolutions premium collection":     90,
-  "surging sparks premium collection":           38,
-  "stellar crown premium collection":            35,
-  "temporal forces premium collection":          32,
-  "obsidian flames premium collection":          32,
-  "paradox rift premium collection":             32,
-  "paldean fates premium collection":            38,
-  "paldea evolved premium collection":           28,
-  "scarlet violet premium collection":           30,
-  "evolving skies premium collection":           65,
-  "brilliant stars premium collection":          38,
-  "shining fates premium collection":            55,
-  "hidden fates premium collection":             75,
+  // ── PREMIUM COLLECTIONS ─────────────────────────────────────────────
+  "prismatic evolutions premium collection": 90,
+  "surging sparks premium collection":       36,
+  "stellar crown premium collection":        34,
+  "obsidian flames premium collection":      30,
+  "paradox rift premium collection":         30,
+  "evolving skies premium collection":       64,
+  "brilliant stars premium collection":      36,
+  "shining fates premium collection":        54,
+  "hidden fates premium collection":         72,
 
-  // ── FIGURE COLLECTIONS ──────────────────────────────────────────────────
-  "surging sparks figure collection":            28,
-  "paradox rift figure collection":              26,
-  "obsidian flames figure collection":           24,
-  "paldea evolved figure collection":            22,
-  "scarlet violet figure collection":            22,
-  "evolving skies figure collection":            45,
-  "brilliant stars figure collection":           28,
-  "fusion strike figure collection":             24,
+  // ── BLISTERS ────────────────────────────────────────────────────────
+  "prismatic evolutions blister":        26,
+  "shining fates blister":               21,
+  "hidden fates blister":                29,
+  "evolving skies blister":              27,
+  "brilliant stars blister":             13,
+  "surging sparks blister":              12,
+  "journey together blister":            11,
 
-  // ── BATTLE DECKS ────────────────────────────────────────────────────────
-  "surging sparks battle deck":                  18,
-  "stellar crown battle deck":                   16,
-  "temporal forces battle deck":                 16,
-  "obsidian flames battle deck":                 16,
-  "paradox rift battle deck":                    15,
-  "paldean fates battle deck":                   16,
-  "paldea evolved battle deck":                  14,
-  "scarlet violet battle deck":                  14,
-  "evolving skies battle deck":                  20,
-  "brilliant stars v battle deck":               18,
-  "fusion strike v battle deck":                 16,
-
-  // ── BLISTER PACKS & CHECK LANE ─────────────────────────────────────────
-  "shining fates blister":                       22,
-  "hidden fates blister":                        30,
-  "evolving skies blister":                      28,
-  "brilliant stars blister":                     14,
-  "fusion strike blister":                       12,
-  "astral radiance blister":                     12,
-  "silver tempest blister":                      12,
-  "scarlet violet blister":                      10,
-  "paldea evolved blister":                       9,
-  "obsidian flames blister":                     10,
-  "temporal forces blister":                     10,
-  "twilight masquerade blister":                 10,
-  "stellar crown blister":                       11,
-  "surging sparks blister":                      12,
-  "prismatic evolutions blister":                28,
-
-  // ── BUILD & BATTLE BOXES ────────────────────────────────────────────────
-  "chilling reign build battle box":             30,
-  "battle styles build battle box":              30,
-  "evolving skies build battle box":             65,
-  "brilliant stars build battle box":            28,
-  "astral radiance build battle box":            26,
-  "lost origin build battle box":                26,
-  "silver tempest build battle box":             26,
-  "crown zenith build battle box":               24,
-  "paldea evolved build battle box":             22,
-  "obsidian flames build battle box":            22,
-  "paradox rift build battle box":               22,
-  "temporal forces build battle box":            22,
-  "twilight masquerade build battle box":        22,
-  "stellar crown build battle box":              22,
-  "surging sparks build battle box":             24,
+  // ── BUILD & BATTLE ────────────────────────────────────────────────────
+  "evolving skies build battle box":     64,
+  "chilling reign build battle box":     29,
+  "battle styles build battle box":      29,
+  "brilliant stars build battle box":    27,
+  "surging sparks build battle box":     23,
+  "journey together build battle box":   22,
 };
 
 // ─── HOLD DATA — investment potential per set ─────────────────────────────
@@ -980,6 +930,31 @@ const RETAILERS = [
       "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
+    ],
+  },
+  // New UK retailers
+  {
+    name: "Big Orbit Cards", base: "https://www.bigorbitcards.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-sealed-products",
+      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon",
+    ],
+  },
+  {
+    name: "Zatu Games", base: "https://www.board-game.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-tcg",
+      "/collections/pokemon-sealed",
+      "/collections/pokemon",
+    ],
+  },
+  {
+    name: "Pokemon Center UK", base: "https://www.pokemoncenter.com", type: "html",
+    urls: [
+      "https://www.pokemoncenter.com/en-gb/category/booster-boxes",
+      "https://www.pokemoncenter.com/en-gb/category/elite-trainer-boxes",
+      "https://www.pokemoncenter.com/en-gb/category/booster-packs",
     ],
   },
 ];
