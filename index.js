@@ -1,4 +1,3 @@
-const { pushToIngest } = require("./ingest");
 const cheerio = require("cheerio");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -897,12 +896,12 @@ const RETAILERS = [
   {
     name: "Total Cards", base: "https://totalcards.net", type: "shopify-json",
     collections: [
-      "/collections/pokemon-english-booster-boxes",
-      "/collections/pokemon-english-etbs",
+      "/collections/pokemon-scarlet-violet",
+      "/collections/pokemon-sword-shield",
+      "/collections/pokemon-sun-moon",
       "/collections/pokemon-booster-boxes",
       "/collections/pokemon-elite-trainer-boxes",
       "/collections/pokemon-sealed-product",
-      "/collections/pokemon-english",
       "/collections/pokemon-tcg",
       "/collections/pokemon",
     ],
@@ -1031,67 +1030,79 @@ function buildAlert(f) {
   const { label, stars } = getDealRating(f.price, rrp, market);
   const t = f.title.toLowerCase();
 
-  const vsMarket = (market && market > 0) ? ((f.price - market) / market * 100) : null;
-  const vsRrp    = (rrp && rrp > 0)       ? ((f.price - rrp)    / rrp    * 100) : null;
-  const ebayFee  = (market && market > 0)  ? market * 0.13 : null;
-  const flipProfit = (market && market > 0) ? (market - f.price - ebayFee - 4.00) : null;
-  const flipRoi    = (flipProfit !== null && f.price > 0) ? (flipProfit / f.price * 100) : null;
-  const fmt = n => (n != null && !isNaN(n)) ? Number(n).toFixed(2) : "—";
-  const fmtPct = n => (n != null && !isNaN(n)) ? `${n > 0 ? "+" : ""}${Math.round(n)}%` : "";
+  const vsMarket = (market > 0) ? ((f.price - market) / market * 100) : null;
+  const vsRrp    = (rrp > 0)    ? ((f.price - rrp)    / rrp    * 100) : null;
+  const ebayFee  = market ? +(market * 0.13).toFixed(2) : null;
+  const postage  = 4.00;
+  const flipNet  = market ? +(market - f.price - ebayFee - postage).toFixed(2) : null;
+  const flipRoi  = (flipNet !== null && f.price > 0) ? Math.round(flipNet / f.price * 100) : null;
 
   let perPack = null;
-  if (t.includes("booster box") && !t.includes("half") && f.price > 0) perPack = f.price / 36;
-  else if ((t.includes("half box") || t.includes("half booster box")) && f.price > 0) perPack = f.price / 18;
-  else if (t.includes("booster bundle") && f.price > 0) perPack = f.price / 6;
+  if (t.includes("booster box") && !t.includes("half")) perPack = +(f.price / 36).toFixed(2);
+  else if (t.includes("half")) perPack = +(f.price / 18).toFixed(2);
+  else if (t.includes("booster bundle")) perPack = +(f.price / 6).toFixed(2);
 
+  const p = n => n != null ? `£${(+n).toFixed(2)}` : "—";
+  const pct = n => n != null ? `${n > 0 ? "+" : ""}${Math.round(n)}%` : "";
+
+  // ── VERDICT ── the single most important line ──────────────────────────────
   function verdict() {
-    if (flipRoi !== null) {
-      if (flipRoi >= 25)  return `✅ BUY NOW — ${Math.round(flipRoi)}% flip ROI, strong profit`;
-      if (flipRoi >= 15)  return `✅ BUY — Good flip profit (${Math.round(flipRoi)}% ROI)`;
-      if (flipRoi >= 8)   return `✅ BUY — Profitable to flip (+£${fmt(flipProfit)})`;
-      if (flipRoi >= 0)   return `⚖️ MARGINAL — Tiny profit (£${fmt(flipProfit)}), only buy to keep`;
-      if (flipRoi >= -10) return `⚠️ CAUTION — Small loss if flipped (−£${fmt(Math.abs(flipProfit))})`;
-      return `❌ AVOID — Loss of £${fmt(Math.abs(flipProfit))} after fees`;
+    if (flipNet !== null) {
+      if (flipRoi >= 25) return `🔥 STRONG BUY — ${flipRoi}% ROI, flip for +${p(flipNet)} profit`;
+      if (flipRoi >= 15) return `✅ BUY — Solid flip: +${p(flipNet)} profit (${flipRoi}% ROI)`;
+      if (flipRoi >= 8)  return `✅ BUY — Profitable flip: +${p(flipNet)} after fees`;
+      if (flipRoi >= 2)  return `⚖️ MARGINAL — Tiny flip profit: +${p(flipNet)}. Buy to keep only`;
+      if (flipRoi >= -5) return `⚠️ SLIGHT LOSS — −${p(Math.abs(flipNet))} if flipped. Hold potential only`;
+      return                    `❌ AVOID — Flip loss of ${p(Math.abs(flipNet))} after eBay fees`;
     }
     if (vsRrp !== null) {
-      if (vsRrp <= -15) return `✅ BUY — ${Math.round(Math.abs(vsRrp))}% below RRP`;
-      if (vsRrp <= 0)   return `⚖️ CONSIDER — At or below RRP`;
-      return `❌ AVOID — Above market price`;
+      if (vsRrp <= -20) return `✅ BUY — ${Math.abs(Math.round(vsRrp))}% below RRP, strong value`;
+      if (vsRrp <=   0) return `⚖️ CONSIDER — At or below RRP`;
+      if (vsRrp <=  30) return `⚠️ ABOVE RRP — Check eBay before buying`;
+      return                   `❌ AVOID — Significantly above RRP`;
     }
-    return `📦 IN STOCK — No price comparison data`;
+    return `📦 IN STOCK — No eBay data available`;
   }
 
   const lines = [];
-  if (f.isPriceDrop && f.oldPrice) lines.push(`🔻 PRICE DROP — Was £${fmt(f.oldPrice)}`);
-  lines.push(`${label} ${stars}`);
+
+  // ── HEADER ──
+  if (f.isPriceDrop && f.oldPrice) {
+    lines.push(`🔻 PRICE DROP  Was ${p(f.oldPrice)} → Now ${p(f.price)}`);
+  }
+  lines.push(`${label}  ${stars}`);
   lines.push(``);
   lines.push(`<b>${f.title}</b>`);
   lines.push(`🏪 ${f.retailer}`);
   lines.push(``);
-  lines.push(`💰 Buy Now:  <b>£${fmt(f.price)}</b>`);
-  if (rrp && vsRrp !== null)    lines.push(`📊 RRP:      £${fmt(rrp)}  (${fmtPct(vsRrp)})`);
-  if (market && vsMarket !== null) lines.push(`📈 eBay:     £${fmt(market)}  (${fmtPct(vsMarket)})`);
-  if (perPack)                  lines.push(`🃏 Per pack: £${fmt(perPack)}`);
 
-  if (flipProfit !== null && market && ebayFee !== null) {
+  // ── PRICE COMPARISON ──
+  lines.push(`💰 Buy Now:   <b>${p(f.price)}</b>`);
+  if (rrp)    lines.push(`📊 RRP:       ${p(rrp)}   ${vsRrp != null ? `(${pct(vsRrp)})` : ""}`);
+  if (market) lines.push(`📈 eBay Sold: ${p(market)}  ${vsMarket != null ? `(${pct(vsMarket)})` : ""}`);
+  if (perPack) lines.push(`🃏 Per pack:  ${p(perPack)}`);
+
+  // ── FLIP CALCULATOR ──
+  if (flipNet !== null) {
     lines.push(``);
-    if (flipProfit > 0) {
-      lines.push(`💸 Flip profit: <b>+£${fmt(flipProfit)} (+${Math.round(flipRoi)}% ROI)</b>`);
-    } else {
-      lines.push(`💸 Flip loss: <b>−£${fmt(Math.abs(flipProfit))} (${Math.round(flipRoi)}% ROI)</b>`);
-    }
-    lines.push(`   Sell £${fmt(market)} − fees £${fmt(ebayFee)} − post £4.00`);
+    lines.push(flipNet >= 0
+      ? `💸 Flip:  <b>+${p(flipNet)} profit  (${flipRoi}% ROI) ✅</b>`
+      : `💸 Flip:  <b>−${p(Math.abs(flipNet))} loss  (${flipRoi}% ROI) ❌</b>`
+    );
+    lines.push(`   Sell ${p(market)} − eBay ${p(ebayFee)} − post ${p(postage)}`);
   }
 
+  // ── HOLD ANALYSIS ──
   if (hold) {
-    const yr1est = market ? market * hold.yr1mult : null;
-    const trend = hold.trend === "rising" ? "↗️ Rising" : hold.trend === "declining" ? "↘️ Falling" : "→ Stable";
+    const yr1 = market ? market * hold.yr1mult : null;
+    const trend = hold.trend === "rising" ? "↗️" : hold.trend === "declining" ? "↘️" : "→";
     lines.push(``);
-    lines.push(`📦 Hold: ${trend} · ${hold.holdScore}/10`);
-    if (yr1est) lines.push(`   12mo est: £${Math.round(yr1est * 0.9)}–£${Math.round(yr1est * 1.1)}`);
-    if (hold.note) lines.push(`   ${hold.note}`);
+    lines.push(`📦 Hold: ${trend} ${hold.trend}  ·  Score ${hold.holdScore}/10`);
+    if (yr1) lines.push(`   Est. 12mo: ${p(Math.round(yr1 * 0.9))}–${p(Math.round(yr1 * 1.1))}`);
+    lines.push(`   ${hold.note}`);
   }
 
+  // ── VERDICT — bold, unmissable ──
   lines.push(``);
   lines.push(`━━━━━━━━━━━━━━━━━━`);
   lines.push(`🏆 <b>${verdict()}</b>`);
@@ -1162,15 +1173,7 @@ async function runScan() {
           continue;
         }
 
-        // For booster packs — only alert if profitable to flip
-        const priority = getProductPriority(item.title);
-        if (priority === "LOW") {
-          const market = getMarket(item.title);
-          if (!market) continue;
-          const flip = market - item.price - (market * 0.13) - 4.00;
-          if (flip <= 0) continue;
-        }
-
+        // Show ALL valid products — verdict in the message tells user if worth buying
         const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
         const seen = seenPrices.get(key);
         if (!seen) {
@@ -1199,15 +1202,7 @@ async function runScan() {
         for (const item of items) {
           if (!isValidProduct(item.title, item.price)) continue;
 
-          // For booster packs — only alert if actually profitable to flip
-          const priority = getProductPriority(item.title);
-          if (priority === "LOW") {
-            const market = getMarket(item.title);
-            if (!market) continue; // No market data — skip packs
-            const flip = market - item.price - (market * 0.13) - 4.00;
-            if (flip <= 0) continue; // Not profitable — skip
-          }
-
+          // Show ALL valid products — verdict tells user if worth buying
           const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
           const seen = seenPrices.get(key);
           if (!seen) {
