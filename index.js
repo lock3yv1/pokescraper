@@ -896,41 +896,69 @@ const RETAILERS = [
   {
     name: "Total Cards", base: "https://totalcards.net", type: "shopify-json",
     collections: [
-      "/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes",
-      "/collections/pokemon-tins", "/collections/pokemon-booster-bundles",
-      "/collections/pokemon-sealed-product", "/collections/pokemon",
+      "/collections/pokemon-english-booster-boxes",
+      "/collections/pokemon-english-etbs",
+      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon-elite-trainer-boxes",
+      "/collections/pokemon-sealed-product",
+      "/collections/pokemon-english",
+      "/collections/pokemon",
     ],
   },
   { name: "Titan Cards",    base: "https://titancards.co.uk",    type: "shopify-json" },
   {
     name: "Eterna Cards", base: "https://eternacards.co.uk", type: "shopify-json",
     collections: [
-      "/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes",
-      "/collections/pokemon-half-boxes", "/collections/pokemon-tcg-sealed-products",
-      "/collections/pokemon-sealed", "/collections/pokemon",
+      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon-elite-trainer-boxes",
+      "/collections/pokemon-half-boxes",
+      "/collections/pokemon-tcg-sealed-products",
+      "/collections/pokemon-sealed",
+      "/collections/pokemon",
     ],
   },
-  { name: "PACKRAT",        base: "https://packratt.co.uk",      type: "shopify-json" },
+  {
+    name: "PACKRAT", base: "https://packratt.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-sealed",
+      "/collections/pokemon-tcg",
+      "/collections/pokemon",
+      "/collections/all",
+    ],
+  },
   { name: "Double Sleeved", base: "https://doublesleeved.co.uk", type: "shopify-json" },
   {
     name: "Toys N Geek", base: "https://www.toysngeek.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon"],
+    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
   },
   {
     name: "The Card Vault", base: "https://thecardvault.co.uk", type: "shopify-json",
     collections: [
-      "/collections/pokemon-sealed-products", "/collections/pokemon-booster-boxes",
-      "/collections/pokemon-tcg", "/collections/pokemon",
+      "/collections/pokemon-sealed-products",
+      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon-tcg",
+      "/collections/pokemon",
+      "/collections/all",
     ],
   },
   { name: "My TCG",         base: "https://mytcg.co.uk",         type: "shopify-json" },
   { name: "Gathering Games",base: "https://gatheringgames.co.uk",type: "shopify-json" },
-  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json" },
+  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json",
+    collections: [
+      "/collections/pokemon-sealed",
+      "/collections/pokemon-tcg",
+      "/collections/pokemon",
+      "/collections/all",
+    ],
+  },
   {
     name: "Japan2UK", base: "https://japan2uk.com", type: "shopify-json",
     collections: [
-      "/collections/english-pokemon", "/collections/pokemon-english",
-      "/collections/pokemon-sealed", "/collections/pokemon",
+      "/collections/pokemon-english-sealed",
+      "/collections/english-sealed",
+      "/collections/pokemon-sealed",
+      "/collections/pokemon",
+      "/collections/all",
     ],
   },
   {
@@ -1001,78 +1029,82 @@ function buildAlert(f) {
 
   const vsMarket = market ? ((f.price - market) / market * 100) : null;
   const vsRrp    = rrp    ? ((f.price - rrp)    / rrp    * 100) : null;
+  const ebayFee  = market ? market * 0.13 : null;
+  const flipProfit = market ? (market - f.price - ebayFee - 4.00) : null;
+  const flipRoi    = (flipProfit !== null && f.price > 0) ? (flipProfit / f.price * 100) : null;
+  const fmt = n => n.toFixed(2);
 
-  const ebayFeeRate = 0.13;
-  const postage     = 4.00;
-  const flipProfit  = market ? (market - f.price - (market * ebayFeeRate) - postage) : null;
-  const flipRoi     = (flipProfit !== null && f.price > 0) ? (flipProfit / f.price * 100) : null;
-
-  // Per-pack cost for boxes
+  // Per-pack breakdown
   let perPack = null;
   if (t.includes("booster box") && !t.includes("half")) perPack = f.price / 36;
   else if (t.includes("half box") || t.includes("half booster box")) perPack = f.price / 18;
   else if (t.includes("booster bundle")) perPack = f.price / 6;
 
-  const yr1est = (hold && market) ? (market * hold.yr1mult) : null;
-  const fmt = n => n.toFixed(2);
-  const pct = n => `${n > 0 ? "+" : ""}${Math.round(n)}%`;
-
-  function buildVerdict() {
-    const isFlippable    = flipProfit !== null && flipProfit > 0;
-    const isGoodFlip     = flipRoi !== null && flipRoi >= 10;
-    const isExceptional  = flipRoi !== null && flipRoi >= 20;
-    const isGoodHold     = hold && hold.holdScore >= 6;
-    const isBelowMarket  = vsMarket !== null && vsMarket < -5;
-
-    if (isExceptional && isGoodHold) return "✅ BUY — Strong flip + great hold";
-    if (isExceptional)               return "✅ BUY — Strong flip profit";
-    if (isGoodFlip && isGoodHold)    return "✅ BUY — Profitable to flip + good hold";
-    if (isGoodFlip)                  return "✅ BUY — Profitable to flip";
-    if (isFlippable && isGoodHold)   return "✅ BUY — Small profit + strong hold";
-    if (isFlippable)                 return "⚖️ CONSIDER — Marginal flip profit";
-    if (isBelowMarket && isGoodHold) return "⚖️ CONSIDER — Below market, good hold";
-    if (isBelowMarket)               return "⚖️ CONSIDER — Below market price";
-    if (flipProfit !== null && flipProfit <= 0) return "❌ AVOID — Loss after eBay fees";
-    return "❌ AVOID — Not profitable";
+  // Clear one-line verdict with reason
+  function verdict() {
+    if (flipProfit === null && vsRrp === null) return "📦 IN STOCK — No price data available";
+    if (flipRoi >= 25)  return `✅ BUY NOW — ${Math.round(flipRoi)}% flip ROI, strong profit`;
+    if (flipRoi >= 15)  return `✅ BUY — Good flip profit (${Math.round(flipRoi)}% ROI)`;
+    if (flipRoi >= 8)   return `✅ BUY — Profitable to flip (+£${fmt(flipProfit)})`;
+    if (flipRoi >= 0)   return `⚖️ MARGINAL — Tiny profit (£${fmt(flipProfit)}), only buy to keep`;
+    if (flipRoi >= -10) return `⚠️ CAUTION — Small loss if flipped (−£${fmt(Math.abs(flipProfit))})`;
+    if (flipProfit !== null) return `❌ AVOID — Loss of £${fmt(Math.abs(flipProfit))} after fees`;
+    if (vsRrp <= -15)   return `✅ BUY — ${Math.round(Math.abs(vsRrp))}% below RRP`;
+    if (vsRrp <= 0)     return `⚖️ CONSIDER — Below or at RRP`;
+    return `❌ AVOID — Above market, not worth it`;
   }
 
-  const trendIcon = !hold ? "" :
-    hold.trend === "rising" ? "↗️" :
-    hold.trend === "declining" ? "↘️" : "→";
+  // Hold summary
+  function holdLine() {
+    if (!hold) return null;
+    const trend = hold.trend === "rising" ? "↗️ Rising" : hold.trend === "declining" ? "↘️ Falling" : "→ Stable";
+    const yr1est = market ? market * hold.yr1mult : null;
+    const est = yr1est ? ` · 12mo est £${Math.round(yr1est * 0.9)}–£${Math.round(yr1est * 1.1)}` : "";
+    return `${trend} · Hold score ${hold.holdScore}/10${est}`;
+  }
 
-  const dropLine = f.isPriceDrop
-    ? `🔻 Was £${fmt(f.oldPrice)} → Now £${fmt(f.price)} (saved £${fmt(f.oldPrice - f.price)})\n`
-    : "";
+  const lines = [];
 
-  const lines = [
-    `${f.isPriceDrop ? "🔻 PRICE DROP  " : ""}${label} ${stars}`,
-    ``,
-    `${dropLine}<b>${f.title}</b>`,
-    `🏪 ${f.retailer}`,
-    ``,
-    `💰 <b>£${fmt(f.price)}</b>`,
-  ];
+  // Header
+  if (f.isPriceDrop) lines.push(`🔻 PRICE DROP — Was £${fmt(f.oldPrice)}`);
+  lines.push(`${label} ${stars}`);
+  lines.push(``);
+  lines.push(`<b>${f.title}</b>`);
+  lines.push(`🏪 ${f.retailer}`);
+  lines.push(``);
 
-  if (rrp)     lines.push(`📊 RRP:    £${fmt(rrp)}  (<b>${pct(vsRrp)}</b>)`);
-  if (market)  lines.push(`📈 eBay:   £${fmt(market)}  (<b>${pct(vsMarket)}</b>)`);
-  if (perPack) lines.push(`🃏 /pack:  £${fmt(perPack)}`);
+  // Prices — the three numbers that matter
+  lines.push(`💰 Buy Now:  <b>£${fmt(f.price)}</b>`);
+  if (rrp)    lines.push(`📊 RRP:      £${fmt(rrp)}  (${vsRrp > 0 ? "+" : ""}${Math.round(vsRrp)}%)`);
+  if (market) lines.push(`📈 eBay:     £${fmt(market)}  (${vsMarket > 0 ? "+" : ""}${Math.round(vsMarket)}%)`);
+  if (perPack) lines.push(`🃏 Per pack: £${fmt(perPack)}`);
 
+  // Flip profit — clear and direct
   if (flipProfit !== null) {
     lines.push(``);
-    lines.push(`💸 <b>FLIP:</b>  ${flipProfit > 0 ? `+£${fmt(flipProfit)} profit (+${Math.round(flipRoi)}% ROI) ✅` : `-£${fmt(Math.abs(flipProfit))} loss ❌`}`);
-    lines.push(`   eBay fees £${fmt(market * ebayFeeRate)} + £${fmt(postage)} post`);
+    if (flipProfit > 0) {
+      lines.push(`💸 Flip profit: <b>+£${fmt(flipProfit)} (+${Math.round(flipRoi)}% ROI)</b>`);
+      lines.push(`   Sell £${fmt(market)} − fees £${fmt(ebayFee)} − post £4.00`);
+    } else {
+      lines.push(`💸 Flip loss: <b>−£${fmt(Math.abs(flipProfit))} (${Math.round(flipRoi)}% ROI)</b>`);
+      lines.push(`   Sell £${fmt(market)} − fees £${fmt(ebayFee)} − post £4.00`);
+    }
   }
 
-  if (hold) {
+  // Hold analysis
+  const hl = holdLine();
+  if (hl) {
     lines.push(``);
-    lines.push(`📦 <b>HOLD:</b>  ${trendIcon} ${hold.trend} · ${hold.holdScore}/10`);
-    if (yr1est) lines.push(`   12mo: £${Math.round(yr1est * 0.9)}–£${Math.round(yr1est * 1.1)}`);
-    lines.push(`   ${hold.note}`);
+    lines.push(`📦 Hold: ${hl}`);
+    if (hold.note) lines.push(`   ${hold.note}`);
   }
 
+  // Verdict — the most important line
   lines.push(``);
-  lines.push(`🏆 <b>${buildVerdict()}</b>`);
-  lines.push(``, `<a href="${f.url}">👉 BUY NOW →</a>`);
+  lines.push(`━━━━━━━━━━━━━━━━━━`);
+  lines.push(`🏆 <b>${verdict()}</b>`);
+  lines.push(`━━━━━━━━━━━━━━━━━━`);
+  lines.push(`<a href="${f.url}">👉 BUY NOW →</a>`);
 
   return lines.join("\n");
 }
