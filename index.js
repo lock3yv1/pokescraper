@@ -322,6 +322,28 @@ function parseShopify(html, baseUrl) {
 
     if (items.length > 0) break;
   }
+
+  // Amazon-specific parser
+  if (items.length === 0 && baseUrl.includes("amazon")) {
+    $("[data-component-type='s-search-result']").each((_, el) => {
+      const title = $(el).find("h2 a span").first().text().trim();
+      const priceWhole = $(el).find(".a-price-whole").first().text().trim();
+      const priceFrac = $(el).find(".a-price-fraction").first().text().trim();
+      const price = parseFloat(`${priceWhole.replace(/,/g, "")}.${priceFrac || "00"}`);
+      const link = $(el).find("h2 a").first().attr("href");
+      const soldOut = $(el).text().toLowerCase().includes("currently unavailable");
+      let imageUrl = $(el).find("img.s-image").first().attr("src") || "";
+      if (title && !soldOut && price > 0 && link) {
+        const url = link.startsWith("http") ? link : `https://www.amazon.co.uk${link}`;
+        const key = `${title.toLowerCase()}::${Math.round(price)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({ title, price, url, image: imageUrl });
+        }
+      }
+    });
+  }
+
   return items;
 }
 
@@ -433,6 +455,75 @@ const RETAILERS = [
   },
 ];
 
+const GH_TOKEN = process.env.GH_TOKEN;
+const GH_REPO = "lock3yv1/lock3ys-den";
+
+// Load previously seen prices from GitHub to detect price changes
+let previousPrices = {};
+
+async function loadPreviousPrices() {
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${GH_REPO}/main/deals.json?t=${Date.now()}`,
+      { headers: { "Cache-Control": "no-cache" } }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        data.forEach(d => {
+          if (d.id) previousPrices[d.id] = d.buyNow;
+        });
+        console.log(`📂 Loaded ${data.length} previous prices`);
+      }
+    }
+  } catch (e) {
+    console.log("📂 No previous deals.json found — fresh start");
+  }
+}
+
+async function saveDealsToGitHub(deals) {
+  if (!GH_TOKEN) { console.log("⚠️ No GH_TOKEN — skipping deals.json save"); return; }
+  try {
+    // Get current file SHA if exists
+    let sha;
+    try {
+      const existing = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/contents/deals.json`,
+        { headers: { Authorization: `token ${GH_TOKEN}`, "User-Agent": "pokescraper" } }
+      );
+      if (existing.ok) {
+        const data = await existing.json();
+        sha = data.sha;
+      }
+    } catch {}
+
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(deals, null, 2))));
+    const body = {
+      message: `Update deals.json — ${new Date().toISOString()}`,
+      content,
+      ...(sha ? { sha } : {}),
+    };
+
+    const res = await fetch(
+      `https://api.github.com/repos/${GH_REPO}/contents/deals.json`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${GH_TOKEN}`,
+          "Content-Type": "application/json",
+          "User-Agent": "pokescraper",
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    const data = await res.json();
+    if (res.ok) console.log(`✅ Saved ${deals.length} deals to GitHub`);
+    else console.log("❌ GitHub save error:", data.message);
+  } catch (e) {
+    console.log("❌ GitHub save error:", e.message);
+  }
+}
+
 const notified = new Set();
 
 async function sendPhoto(imageUrl, caption) {
@@ -531,13 +622,18 @@ async function sendAlert(f) {
 
 async function runScan() {
   console.log(`\n🔍 ${RETAILERS.length} retailers · ${new Date().toLocaleTimeString("en-GB")}`);
+
+  // Load previous prices to detect changes
+  await loadPreviousPrices();
+
   const findings = [];
+  const allDeals = [];
 
   for (const retailer of RETAILERS) {
     console.log(`  → ${retailer.name}`);
 
     for (const url of retailer.urls) {
-      await new Promise(r => setTimeout(r, 500)); // 0.5s between requests
+      await new Promise(r => setTimeout(r, 500));
       const html = await fetchPage(url);
       if (!html) continue;
 
@@ -548,24 +644,55 @@ async function runScan() {
       for (const item of items) {
         if (!isValidProduct(item.title, item.price)) continue;
 
-        const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
-        if (!notified.has(key)) {
-          notified.add(key);
-          findings.push({ ...item, retailer: retailer.name });
-          console.log(`    🟢 "${item.title}" £${item.price}`);
+        const id = `${retailer.name}::${item.title.toLowerCase().trim()}`;
+        const rrp = getRRP(item.title);
+        const market = getMarket(item.title);
+
+        // Build deal object for the app
+        const deal = {
+          id,
+          product: item.title,
+          retailer: retailer.name,
+          buyNow: item.price,
+          rrp: rrp || null,
+          resell: market || null,
+          url: item.url,
+          image: item.image || null,
+          lastSeen: new Date().toISOString(),
+        };
+        allDeals.push(deal);
+
+        // Alert if: never seen before OR price has dropped since last scan
+        const prevPrice = previousPrices[id];
+        const isNew = !prevPrice;
+        const isPriceDrop = prevPrice && item.price < prevPrice;
+
+        if (!notified.has(id) && (isNew || isPriceDrop)) {
+          notified.add(id);
+          findings.push({ ...item, retailer: retailer.name, id });
+          if (isPriceDrop) {
+            console.log(`    📉 PRICE DROP: "${item.title}" £${prevPrice} → £${item.price}`);
+          } else {
+            console.log(`    🟢 NEW: "${item.title}" £${item.price}`);
+          }
         }
       }
     }
   }
 
-  console.log(`\n📊 ${findings.length} new confirmed deals`);
+  // Save all deals to GitHub for the app
+  if (allDeals.length > 0) {
+    await saveDealsToGitHub(allDeals);
+  }
+
+  console.log(`\n📊 ${findings.length} alerts to send · ${allDeals.length} total deals tracked`);
 
   for (const f of findings) {
     await sendAlert(f);
     await new Promise(r => setTimeout(r, 800));
   }
 
-  if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
+  if (findings.length === 0) console.log("  ⬜ No new findings or price drops this scan.");
 }
 
 console.log("🚀 Lock3y's PokéScraper — Full Coverage");
