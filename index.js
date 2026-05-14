@@ -545,6 +545,20 @@ function isValidProduct(title, price) {
   return true;
 }
 
+// Higher priority products always shown — packs only if profitable flip
+function getProductPriority(title) {
+  const t = title.toLowerCase();
+  if (t.includes("booster box") && !t.includes("half")) return "HIGH";
+  if (t.includes("half booster box") || t.includes("half box")) return "HIGH";
+  if (t.includes("elite trainer box") || t.includes("etb")) return "HIGH";
+  if (t.includes("booster bundle")) return "HIGH";
+  if (t.includes("ultra premium collection") || t.includes("upc")) return "HIGH";
+  if (t.includes("tin") || t.includes("collection box")) return "MEDIUM";
+  if (t.includes("blister") || t.includes("poster collection")) return "MEDIUM";
+  if (t.includes("booster pack")) return "LOW"; // Only send if profitable
+  return "MEDIUM";
+}
+
 function normaliseTitle(title) {
   return title.toLowerCase()
     .replace(/\s*[-–—:]\s*/g, " ")
@@ -850,6 +864,7 @@ const CORE_SEARCHES = [
 
 // ─── RETAILERS ───────────────────────────────────────────────────────────────
 const RETAILERS = [
+  // Shopify JSON API retailers — most reliable
   { name: "Total Cards",    base: "https://totalcards.net",       type: "shopify-json" },
   { name: "Titan Cards",    base: "https://titancards.co.uk",     type: "shopify-json" },
   { name: "Eterna Cards",   base: "https://eternacards.co.uk",    type: "shopify-json" },
@@ -858,8 +873,11 @@ const RETAILERS = [
   { name: "Toys N Geek",    base: "https://www.toysngeek.co.uk",  type: "shopify-json" },
   { name: "The Card Vault", base: "https://thecardvault.co.uk",   type: "shopify-json" },
   { name: "My TCG",         base: "https://mytcg.co.uk",          type: "shopify-json" },
-  { name: "Gathering Games",base: "https://gatheringgames.co.uk",  type: "shopify-json" },
-  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",   type: "shopify-json" },
+  { name: "Gathering Games",base: "https://gatheringgames.co.uk", type: "shopify-json" },
+  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk",  type: "shopify-json" },
+  { name: "Chaos Cards",    base: "https://www.chaoscards.co.uk", type: "shopify-json" },
+  { name: "Japan2UK",       base: "https://japan2uk.com",         type: "shopify-json" },
+  // HTML retailers
   {
     name: "Smyths", base: "https://www.smythstoys.com", type: "html",
     urls: [
@@ -867,33 +885,15 @@ const RETAILERS = [
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+bundle",
-    ],
-  },
-  {
-    name: "Argos", base: "https://www.argos.co.uk", type: "html",
-    urls: [
-      "https://www.argos.co.uk/search/pokemon-booster-box/",
-      "https://www.argos.co.uk/search/pokemon-elite-trainer-box/",
-      "https://www.argos.co.uk/search/pokemon-trading-cards/",
-    ],
-  },
-  {
-    name: "GAME", base: "https://www.game.co.uk", type: "html",
-    urls: [
-      "https://www.game.co.uk/search?q=pokemon+booster+box",
-      "https://www.game.co.uk/search?q=pokemon+elite+trainer+box",
-      "https://www.game.co.uk/search?q=pokemon+ascended+heroes",
-      "https://www.game.co.uk/search?q=pokemon+destined+rivals",
     ],
   },
   {
     name: "Amazon UK", base: "https://www.amazon.co.uk", type: "html",
     urls: [
-      "https://www.amazon.co.uk/s?k=pokemon+booster+box+scarlet+violet&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+booster+box+english&rh=p_85%3A1",
+      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+evolving+skies+booster+box&rh=p_85%3A1",
     ],
   },
@@ -945,28 +945,24 @@ function buildAlert(f) {
   const { label, stars } = getDealRating(f.price, rrp, market);
   const t = f.title.toLowerCase();
 
-  // Price deltas
+  const vsMarket = market ? ((f.price - market) / market * 100) : null;
   const vsRrp    = rrp    ? ((f.price - rrp)    / rrp    * 100) : null;
-  const vsMarket = market ? ((f.price - market)  / market * 100) : null;
-  const saveRrp  = rrp    ? (rrp - f.price)    : null;
-  const saveMkt  = market ? (market - f.price)  : null;
 
-  // Flip calculation (eBay UK fees: ~12.8% + £0.30 listing, rounded to 13% + £4 postage)
   const ebayFeeRate = 0.13;
   const postage     = 4.00;
   const flipProfit  = market ? (market - f.price - (market * ebayFeeRate) - postage) : null;
   const flipRoi     = (flipProfit !== null && f.price > 0) ? (flipProfit / f.price * 100) : null;
 
-  // Per-pack cost
+  // Per-pack cost for boxes
   let perPack = null;
   if (t.includes("booster box") && !t.includes("half")) perPack = f.price / 36;
   else if (t.includes("half box") || t.includes("half booster box")) perPack = f.price / 18;
   else if (t.includes("booster bundle")) perPack = f.price / 6;
 
-  // Hold 12-month forecast
   const yr1est = (hold && market) ? (market * hold.yr1mult) : null;
+  const fmt = n => n.toFixed(2);
+  const pct = n => `${n > 0 ? "+" : ""}${Math.round(n)}%`;
 
-  // Overall verdict
   function buildVerdict() {
     const isFlippable    = flipProfit !== null && flipProfit > 0;
     const isGoodFlip     = flipRoi !== null && flipRoi >= 10;
@@ -974,79 +970,54 @@ function buildAlert(f) {
     const isGoodHold     = hold && hold.holdScore >= 6;
     const isBelowMarket  = vsMarket !== null && vsMarket < -5;
 
-    if (isExceptional && isGoodHold)
-      return "✅ BUY — Strong flip profit + excellent hold value";
-    if (isExceptional)
-      return "✅ BUY — Strong flip profit available now";
-    if (isGoodFlip && isGoodHold)
-      return "✅ BUY — Profitable to flip + good hold";
-    if (isGoodFlip)
-      return "✅ BUY — Profitable to flip";
-    if (isFlippable && isGoodHold)
-      return "✅ BUY — Small flip profit + strong hold value";
-    if (isFlippable)
-      return "⚖️ CONSIDER — Small flip profit, check if worth your time";
-    if (isBelowMarket && isGoodHold)
-      return "⚖️ CONSIDER — Below market, good hold potential";
-    if (isBelowMarket)
-      return "⚖️ CONSIDER — Below market price";
-    if (flipProfit !== null && flipProfit <= 0)
-      return "❌ AVOID — No profit after eBay fees + postage";
-    return "❌ AVOID — Not profitable at this price";
+    if (isExceptional && isGoodHold) return "✅ BUY — Strong flip + great hold";
+    if (isExceptional)               return "✅ BUY — Strong flip profit";
+    if (isGoodFlip && isGoodHold)    return "✅ BUY — Profitable to flip + good hold";
+    if (isGoodFlip)                  return "✅ BUY — Profitable to flip";
+    if (isFlippable && isGoodHold)   return "✅ BUY — Small profit + strong hold";
+    if (isFlippable)                 return "⚖️ CONSIDER — Marginal flip profit";
+    if (isBelowMarket && isGoodHold) return "⚖️ CONSIDER — Below market, good hold";
+    if (isBelowMarket)               return "⚖️ CONSIDER — Below market price";
+    if (flipProfit !== null && flipProfit <= 0) return "❌ AVOID — Loss after eBay fees";
+    return "❌ AVOID — Not profitable";
   }
 
-  const trendIcon = !hold ? "→" :
+  const trendIcon = !hold ? "" :
     hold.trend === "rising" ? "↗️" :
     hold.trend === "declining" ? "↘️" : "→";
 
-  const fmt = n => n.toFixed(2);
-  const pct = n => `${n > 0 ? "+" : ""}${Math.round(n)}%`;
-  const sgn = n => `${n >= 0 ? "+" : ""}£${fmt(Math.abs(n))}`;
-
   const dropLine = f.isPriceDrop
-    ? `🔻 Was £${fmt(f.oldPrice)} → Now £${fmt(f.price)} (−£${fmt(f.oldPrice - f.price)} off)`
-    : null;
+    ? `🔻 Was £${fmt(f.oldPrice)} → Now £${fmt(f.price)} (saved £${fmt(f.oldPrice - f.price)})\n`
+    : "";
 
   const lines = [
     `${f.isPriceDrop ? "🔻 PRICE DROP  " : ""}${label} ${stars}`,
     ``,
-    ...(dropLine ? [dropLine, ``] : []),
-    `<b>${f.title}</b>`,
-    `🏪 <b>${f.retailer}</b>`,
+    `${dropLine}<b>${f.title}</b>`,
+    `🏪 ${f.retailer}`,
     ``,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `💰 BUY PRICE:  <b>£${fmt(f.price)}</b>`,
+    `💰 <b>£${fmt(f.price)}</b>`,
   ];
 
-  if (rrp)    lines.push(`📊 RRP:        £${fmt(rrp)}  (${saveRrp >= 0 ? "-" : "+"}£${fmt(Math.abs(saveRrp))} / <b>${pct(vsRrp)}</b>)`);
-  if (market) lines.push(`📈 eBay SOLD:  £${fmt(market)}  (${saveMkt >= 0 ? "save £" : "over by £"}${fmt(Math.abs(saveMkt))} / <b>${pct(vsMarket)}</b>)`);
-  if (perPack) lines.push(`🃏 PER PACK:   £${fmt(perPack)}`);
+  if (rrp)     lines.push(`📊 RRP:    £${fmt(rrp)}  (<b>${pct(vsRrp)}</b>)`);
+  if (market)  lines.push(`📈 eBay:   £${fmt(market)}  (<b>${pct(vsMarket)}</b>)`);
+  if (perPack) lines.push(`🃏 /pack:  £${fmt(perPack)}`);
 
   if (flipProfit !== null) {
-    lines.push(``, `━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`💸 <b>FLIP CALCULATOR</b>`);
-    lines.push(`   Sell at eBay:  £${fmt(market)}`);
-    lines.push(`   eBay fees 13%: -£${fmt(market * ebayFeeRate)}`);
-    lines.push(`   Postage:       -£${fmt(postage)}`);
-    lines.push(`   ─────────────────────`);
-    if (flipProfit > 0) {
-      lines.push(`   <b>NET PROFIT: +£${fmt(flipProfit)} (+${Math.round(flipRoi)}% ROI) ✅</b>`);
-    } else {
-      lines.push(`   <b>NET LOSS: -£${fmt(Math.abs(flipProfit))} (${Math.round(flipRoi)}% ROI) ⚠️</b>`);
-    }
+    lines.push(``);
+    lines.push(`💸 <b>FLIP:</b>  ${flipProfit > 0 ? `+£${fmt(flipProfit)} profit (+${Math.round(flipRoi)}% ROI) ✅` : `-£${fmt(Math.abs(flipProfit))} loss ❌`}`);
+    lines.push(`   eBay fees £${fmt(market * ebayFeeRate)} + £${fmt(postage)} post`);
   }
 
   if (hold) {
-    lines.push(``, `━━━━━━━━━━━━━━━━━━━━`);
-    lines.push(`📦 <b>HOLD ANALYSIS</b>`);
-    lines.push(`   Score: ${"⭐".repeat(hold.holdScore >= 8 ? 3 : hold.holdScore >= 6 ? 2 : 1)} ${hold.holdScore}/10`);
-    lines.push(`   Trend: ${trendIcon} ${hold.trend.charAt(0).toUpperCase() + hold.trend.slice(1)}`);
-    if (yr1est) lines.push(`   12mo est: £${Math.round(yr1est * 0.9)}–£${Math.round(yr1est * 1.1)}`);
+    lines.push(``);
+    lines.push(`📦 <b>HOLD:</b>  ${trendIcon} ${hold.trend} · ${hold.holdScore}/10`);
+    if (yr1est) lines.push(`   12mo: £${Math.round(yr1est * 0.9)}–£${Math.round(yr1est * 1.1)}`);
     lines.push(`   ${hold.note}`);
   }
 
-  lines.push(``, `━━━━━━━━━━━━━━━━━━━━`);
-  lines.push(`🏆 <b>VERDICT: ${buildVerdict()}</b>`);
+  lines.push(``);
+  lines.push(`🏆 <b>${buildVerdict()}</b>`);
   lines.push(``, `<a href="${f.url}">👉 BUY NOW →</a>`);
 
   return lines.join("\n");
@@ -1105,6 +1076,16 @@ async function runScan() {
 
       for (const item of items) {
         if (!isValidProduct(item.title, item.price)) continue;
+
+        // For booster packs — only alert if profitable to flip
+        const priority = getProductPriority(item.title);
+        if (priority === "LOW") {
+          const market = getMarket(item.title);
+          if (!market) continue;
+          const flip = market - item.price - (market * 0.13) - 4.00;
+          if (flip <= 0) continue;
+        }
+
         const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
         const seen = seenPrices.get(key);
         if (!seen) {
@@ -1132,6 +1113,16 @@ async function runScan() {
 
         for (const item of items) {
           if (!isValidProduct(item.title, item.price)) continue;
+
+          // For booster packs — only alert if actually profitable to flip
+          const priority = getProductPriority(item.title);
+          if (priority === "LOW") {
+            const market = getMarket(item.title);
+            if (!market) continue; // No market data — skip packs
+            const flip = market - item.price - (market * 0.13) - 4.00;
+            if (flip <= 0) continue; // Not profitable — skip
+          }
+
           const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
           const seen = seenPrices.get(key);
           if (!seen) {
