@@ -1,3 +1,4 @@
+const { pushToIngest } = require("./ingest");
 const cheerio = require("cheerio");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
