@@ -113,14 +113,14 @@ const MARKET = {
   "prismatic evolutions tin":            34,
   "prismatic evolutions premium collection": 90,
 
-  // Surging Sparks (SV08) — eBay UK £135-155
-  "surging sparks booster box":         145,
-  "surging sparks elite trainer box":    56,
-  "surging sparks etb":                  56,
-  "surging sparks booster bundle":       30,
-  "surging sparks booster pack":          6,
+  // Surging Sparks (SV08) — booster boxes £195-235 UK May 2026 (150-250% gains over 18mo)
+  "surging sparks booster box":         215,
+  "surging sparks elite trainer box":    58,
+  "surging sparks etb":                  58,
+  "surging sparks booster bundle":       32,
+  "surging sparks booster pack":          7,
   "surging sparks tin":                  22,
-  "surging sparks blister":              12,
+  "surging sparks blister":              13,
 
   // Stellar Crown (SV07)
   "stellar crown booster box":          148,
@@ -233,10 +233,12 @@ const MARKET = {
   "fusion strike etb":                   50,
   "fusion strike booster pack":           9.50,
 
-  "evolving skies booster box":         790,
+  // Evolving Skies (SWSH07) — $260-310 USD March 2026 = £205-245 UK median ~£225
+  // Umbreon VMAX Alt Art at $1,771 raw, 449% long-term appreciation
+  "evolving skies booster box":         225,
   "evolving skies elite trainer box":   172,
   "evolving skies etb":                 172,
-  "evolving skies booster pack":         27,
+  "evolving skies booster pack":         35,
   "evolving skies tin":                  44,
   "evolving skies blister":              27,
 
@@ -386,49 +388,117 @@ const HOLD_DATA = {
 
 // ─── VALID ENGLISH POKEMON SETS ────────────────────────────────────────────
 const ENGLISH_SETS = [
-  // Mega Evolution era
-  "ascended heroes", "destined rivals", "perfect order", "chaos rising", "phantasmal flames",
-  // Scarlet & Violet
+  // ── Mega Evolution era (2025-2026) ──
+  "ascended heroes", "destined rivals", "perfect order", "chaos rising",
+  "phantasmal flames", "mega evolution", "mega lucario", "mega zygarde",
+  "nihil zero", "black bolt", "white flare", "first partner",
+  // ── Scarlet & Violet ──
   "journey together", "prismatic evolutions", "surging sparks", "stellar crown",
   "shrouded fable", "twilight masquerade", "temporal forces", "paradox rift",
-  "obsidian flames", "paldea evolved", "paldean fates", "scarlet & violet",
-  "scarlet and violet", "scarlet violet", "151",
-  // Sword & Shield
+  "obsidian flames", "paldea evolved", "paldean fates",
+  "scarlet & violet", "scarlet and violet", "scarlet violet",
+  "151", "sv1", "sv2", "sv3", "sv4", "sv5", "sv6", "sv7", "sv8", "sv9",
+  // ── Sword & Shield ──
   "crown zenith", "silver tempest", "lost origin", "astral radiance",
   "brilliant stars", "fusion strike", "evolving skies", "chilling reign",
   "battle styles", "shining fates", "vivid voltage", "champions path",
   "darkness ablaze", "rebel clash", "sword & shield", "sword and shield",
-  // Sun & Moon
+  "swsh",
+  // ── Sun & Moon ──
   "hidden fates", "cosmic eclipse", "unified minds", "unbroken bonds",
   "team up", "lost thunder", "celestial storm", "forbidden light",
   "ultra prism", "burning shadows", "guardians rising", "sun & moon",
-  // League battle decks (these have set names in them)
-  "league battle deck", "ex league battle deck",
-  // Catch-all for mega evolution branded products
-  "mega evolution",
+  "sun and moon", "shining legends", "dragon majesty",
+  // ── XY era ──
+  "evolutions", "steam siege", "fates collide", "breakpoint", "breakthrough",
+  "ancient origins", "roaring skies", "primal clash", "phantom forces",
+  "flashfire", "kalos starter", "double crisis", "generations",
+  "xy base", "xy", "pokemon xy",
+  // ── Black & White era ──
+  "legendary treasures", "plasma blast", "plasma freeze", "plasma storm",
+  "boundaries crossed", "dragons exalted", "dark explorers", "next destinies",
+  "noble victories", "emerging powers", "black & white", "black and white",
+  "dragon vault",
+  // ── HeartGold / SoulSilver era ──
+  "call of legends", "triumphant", "undaunted", "unleashed",
+  "heartgold soulsilver", "hgss",
+  // ── Platinum era ──
+  "arceus", "supreme victors", "rising rivals", "platinum base",
+  // ── Diamond & Pearl era ──
+  "stormfront", "legends awakened", "majestic dawn", "great encounters",
+  "secret wonders", "mysterious treasures", "diamond pearl", "dp",
+  // ── EX era ──
+  "power keepers", "dragon frontiers", "crystal guardians", "holon phantoms",
+  "emerald", "unseen forces", "delta species", "deoxys",
+  "team rocket returns", "firered leafgreen", "hidden legends",
+  "team magma vs team aqua", "ex sandstorm", "ex ruby sapphire", "ex dragon",
+  // ── WOTC era (Base Set through Skyridge) ──
+  "base set", "jungle", "fossil", "team rocket", "gym heroes", "gym challenge",
+  "neo genesis", "neo discovery", "neo revelation", "neo destiny",
+  "legendary collection", "expedition", "aquapolis", "skyridge",
+  "southern islands",
+  // ── Special / seasonal ──
+  "celebrations", "pokemon go", "trainers toolkit", "trainer toolkit",
+  "league battle deck", "ex league battle deck", "v battle deck",
+  "pokemon tcg",
 ];
 
 // ─── SEALED PRODUCT TYPES ──────────────────────────────────────────────────
+// Every real product name pattern used by UK retailers
 const PRODUCT_TYPES = [
-  // Boxes
-  "booster box", "half booster box", "half box",
-  // ETBs & trainer boxes
+  // ── Booster Boxes ──
+  "booster box", "half booster box", "half box", "display box",
+  "booster display",
+  // ── Elite Trainer Boxes ──
   "elite trainer box", "etb",
-  // Bundles & blisters
-  "booster bundle", "booster pack",
-  "blister", "blisters", "check lane",
-  // Tins
-  "tin", "tins", "mini tins", "collector tin",
-  // Collections
-  "ultra premium collection", "premium collection", "special collection",
-  "figure collection", "collection box", "collection chest",
-  "poster collection", "pin collection", "deluxe pin collection",
-  // Battle decks & kits
-  "league battle deck", "battle deck", "v battle deck",
+  // ── Booster Bundles & Packs ──
+  "booster bundle", "booster pack", "sleeved booster", "sleeve booster",
+  "booster packs",
+  // ── Blisters ──
+  "blister pack", "blister", "blisters",
+  "3 pack blister", "3-pack blister", "3pack blister",
+  "2 pack blister", "2-pack blister",
+  "check lane blister", "check lane",
+  // ── Tins ──
+  "collector tin", "poke ball tin", "pokeball tin",
+  "mini tin", "mini tins",
+  "tin",
+  // ── Collections & Boxes ──
+  "ultra premium collection", "upc",
+  "premium collection",
+  "special collection",
+  "figure collection",
+  "collection box",
+  "collection chest",
+  "collector chest",
+  // ── Poster & Sticker products ──
+  "poster collection", "poster box", "poster pack",
+  "sticker collection", "tech sticker collection", "sticker pack",
+  // ── Pin & Accessory Collections ──
+  "pin collection", "deluxe pin collection", "pin box",
+  "trading card collection",
+  // ── V/VSTAR/EX Collections ──
+  "v star collection", "vstar collection",
+  "v collection", "ex collection",
+  "gx collection",
+  // ── Collector Kits ──
+  "collector's kit", "collectors kit", "collector kit",
+  // ── Battle Decks & League Decks ──
+  "league battle deck", "v battle deck", "ex battle deck",
+  "battle deck",
+  // ── Build & Battle ──
+  "build and battle box", "build & battle box",
+  "build and battle stadium", "build & battle stadium",
   "build and battle", "build & battle",
-  "trainer kit", "premier deck",
-  // Gift & seasonal
-  "gift set", "advent",
+  // ── Trainer Kits & Starter Sets ──
+  "trainer kit", "starter deck", "starter set",
+  "premier deck holder",
+  // ── Gift & Seasonal ──
+  "gift set", "gift box",
+  "treasure chest",
+  "advent calendar", "holiday calendar",
+  // ── Miscellaneous sealed ──
+  "booster bundle pack", "booster sleeve",
 ];
 
 // ─── HARD BLOCK ────────────────────────────────────────────────────────────
@@ -439,56 +509,74 @@ const BLOCK = [
   "glory of team rocket", "ruler of the black flame",
   "ninja spinner", "mega dream ex",
   "terastal", "wild force", "cyber judge", "clay burst",
-  // Other games
-  "yugioh", "yu-gi-oh", "magic the gathering", "mtg", "digimon",
-  "one piece", "dragon ball", "lorcana", "cardfight", "vanguard",
-  "weiss", "buddyfight", "gundam", "naruto", "flesh and blood",
-  "union arena", "grand archive", "star wars unlimited",
-  "riftbound", "league of legends", "panini", "bandai", "topps",
-  // Singles and non-sealed
-  "graded", "psa", "bgs", "cgc",
-  "lot of", "proxy", "fake", "replica",
-  "playmat", "binder", "dice", "bulk", "funko", "plush",
-  "etb case", "booster box case", "case of", "sealed case", "display case",
-  "holo card", "normal card", "reverse holo", "metal charm", "keychain",
-  "coin set", "blind bag", "portfolio", "binder", "figure",
-  "vinyl figure", "action figure", "toploader", "penny sleeve",
-  // Price filter catches card lots but these explicit blocks help too
-  "card lot", "common", "uncommon", "rare card",
+  // Other card games — must be specific to avoid blocking Pokemon products
+  "yu-gi-oh", "yugioh", "magic the gathering", " mtg ", "digimon tcg",
+  "one piece card", "dragon ball super card", "disney lorcana", "lorcana",
+  "cardfight vanguard", "weiss schwarz", "buddyfight",
+  "flesh and blood", "union arena", "grand archive",
+  "star wars unlimited", "riftbound",
+  // Non-card merchandise
+  "funko", "plush", "soft toy", "stuffed",
+  "vinyl figure", "action figure", "figurine", "statue",
+  "playmat", "neoprene mat",
+  "toploader", "penny sleeve", "card sleeve",
+  "portfolio binder", "ring binder",
+  "dice set", "dice bag",
+  "keychain", "lanyard", "pin badge",
+  "metal charm", "enamel pin",
+  "t-shirt", "hoodie", "cap", "hat",
+  "backpack", "lunch box",
+  // Graded cards
+  "psa graded", "bgs graded", "cgc graded", "beckett graded",
+  "psa 10", "psa 9", "bgs 10", "cgc 10",
+  // Card lots / singles
+  "lot of", "100 cards", "bulk lot", "common lot",
+  "holo card", "reverse holo card", "full art card",
+  "proxy", "fake", "replica", "custom card",
+  // Cases / full displays
+  "booster box case", "etb case", "case of 6", "case of 12",
+  "sealed case", "display case",
+  // Other explicit blocks
+  "card lot", "mystery bundle cards", "panini", "topps", "bandai cards",
 ];
 
 // ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
 const PRICE_LIMITS = {
-  "booster pack":          { min: 2,  max: 60   },
-  "booster box":           { min: 50, max: 1500 },
-  "half box":              { min: 30, max: 500  },
-  "half booster box":      { min: 30, max: 500  },
-  "elite trainer box":     { min: 25, max: 500  },
-  "etb":                   { min: 25, max: 500  },
-  "booster bundle":        { min: 12, max: 250  },
-  "tin":                   { min: 10, max: 200  },
-  "tins":                  { min: 10, max: 200  },
-  "mini tins":             { min: 8,  max: 60   },
-  "collector tin":         { min: 15, max: 200  },
-  "blister":               { min: 5,  max: 80   },
-  "check lane":            { min: 4,  max: 40   },
-  "ultra premium collection": { min: 60, max: 600 },
-  "premium collection":    { min: 20, max: 300  },
-  "special collection":    { min: 20, max: 300  },
-  "figure collection":     { min: 15, max: 200  },
-  "collection box":        { min: 20, max: 300  },
-  "collection chest":      { min: 25, max: 200  },
-  "pin collection":        { min: 10, max: 120  },
-  "battle deck":           { min: 8,  max: 80   },
-  "v battle deck":         { min: 10, max: 100  },
-  "league battle deck":    { min: 15, max: 150  },
-  "build and battle":      { min: 15, max: 80   },
-  "build & battle":        { min: 15, max: 80   },
-  "trainer kit":           { min: 10, max: 60   },
-  "premier deck":          { min: 12, max: 100  },
-  "gift set":              { min: 20, max: 250  },
-  "advent":                { min: 20, max: 120  },
-  "default":               { min: 5,  max: 1500 },
+  "booster pack":               { min: 2,   max: 200  },
+  "booster box":                { min: 50,  max: 5000 },
+  "half box":                   { min: 30,  max: 2500 },
+  "half booster box":           { min: 30,  max: 2500 },
+  "elite trainer box":          { min: 25,  max: 500  },
+  "etb":                        { min: 25,  max: 500  },
+  "booster bundle":             { min: 12,  max: 250  },
+  "tin":                        { min: 10,  max: 200  },
+  "mini tin":                   { min: 6,   max: 60   },
+  "collector tin":              { min: 15,  max: 200  },
+  "blister":                    { min: 5,   max: 100  },
+  "check lane":                 { min: 4,   max: 40   },
+  "poster collection":          { min: 12,  max: 150  },
+  "poster box":                 { min: 12,  max: 150  },
+  "sticker collection":         { min: 8,   max: 80   },
+  "tech sticker collection":    { min: 8,   max: 80   },
+  "ultra premium collection":   { min: 60,  max: 600  },
+  "premium collection":         { min: 20,  max: 300  },
+  "special collection":         { min: 20,  max: 300  },
+  "figure collection":          { min: 15,  max: 200  },
+  "collection box":             { min: 20,  max: 300  },
+  "collection chest":           { min: 25,  max: 250  },
+  "collector chest":            { min: 25,  max: 250  },
+  "pin collection":             { min: 10,  max: 120  },
+  "battle deck":                { min: 8,   max: 80   },
+  "v battle deck":              { min: 10,  max: 100  },
+  "league battle deck":         { min: 15,  max: 150  },
+  "build and battle":           { min: 15,  max: 80   },
+  "build & battle":             { min: 15,  max: 80   },
+  "trainer kit":                { min: 10,  max: 60   },
+  "premier deck":               { min: 12,  max: 100  },
+  "gift set":                   { min: 20,  max: 250  },
+  "gift box":                   { min: 20,  max: 250  },
+  "advent":                     { min: 20,  max: 120  },
+  "default":                    { min: 5,   max: 1500 },
 };
 
 function getPriceLimits(title) {
@@ -707,7 +795,12 @@ async function fetchShopifyProducts(baseUrl, customCollections) {
       const title = product.title;
       if (!title) continue;
 
-      const variant = (product.variants || []).find(v => v.available !== false && parseFloat(v.price) > 0);
+      // Only include variants explicitly marked available AND have stock
+      const variant = (product.variants || []).find(v =>
+        v.available === true &&
+        parseFloat(v.price) > 0 &&
+        (v.inventory_quantity === undefined || v.inventory_quantity > 0)
+      );
       if (!variant) continue;
 
       const price = parseFloat(variant.price);
@@ -919,8 +1012,13 @@ const RETAILERS = [
     urls: [
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+tin",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+collection+box",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+bundle",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+surging+sparks",
+      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+prismatic+evolutions",
     ],
   },
   {
@@ -955,6 +1053,9 @@ const RETAILERS = [
       "https://www.pokemoncenter.com/en-gb/category/booster-boxes",
       "https://www.pokemoncenter.com/en-gb/category/elite-trainer-boxes",
       "https://www.pokemoncenter.com/en-gb/category/booster-packs",
+      "https://www.pokemoncenter.com/en-gb/category/tins",
+      "https://www.pokemoncenter.com/en-gb/category/collections",
+      "https://www.pokemoncenter.com/en-gb/category/booster-bundles",
     ],
   },
 ];
