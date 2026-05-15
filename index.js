@@ -103,15 +103,16 @@ const MARKET = {
   "journey together tin":                22,
   "journey together blister":            11,
 
-  // Prismatic Evolutions (SV08.5) — iconic, ETBs still £85-100, boxes £210-230
-  "prismatic evolutions booster box":   220,
-  "prismatic evolutions booster bundle": 88,
-  "prismatic evolutions elite trainer box": 92,
-  "prismatic evolutions etb":            92,
-  "prismatic evolutions booster pack":   17,
-  "prismatic evolutions blister":        26,
-  "prismatic evolutions tin":            34,
-  "prismatic evolutions premium collection": 90,
+  // Prismatic Evolutions (SV08.5) — market has stabilised May 2026
+  // Booster box ~£180-200, bundle £55-65, ETB £75-85, packs £12-15
+  "prismatic evolutions booster box":    190,
+  "prismatic evolutions booster bundle":  60,
+  "prismatic evolutions elite trainer box": 80,
+  "prismatic evolutions etb":             80,
+  "prismatic evolutions booster pack":    13,
+  "prismatic evolutions blister":         22,
+  "prismatic evolutions tin":             28,
+  "prismatic evolutions premium collection": 75,
 
   // Surging Sparks (SV08) — booster boxes £195-235 UK May 2026 (150-250% gains over 18mo)
   "surging sparks booster box":         215,
@@ -233,14 +234,14 @@ const MARKET = {
   "fusion strike etb":                   50,
   "fusion strike booster pack":           9.50,
 
-  // Evolving Skies (SWSH07) — $260-310 USD March 2026 = £205-245 UK median ~£225
-  // Umbreon VMAX Alt Art at $1,771 raw, 449% long-term appreciation
-  "evolving skies booster box":         225,
-  "evolving skies elite trainer box":   172,
-  "evolving skies etb":                 172,
-  "evolving skies booster pack":         35,
-  "evolving skies tin":                  44,
-  "evolving skies blister":              27,
+  // Evolving Skies (SWSH07) — UK median May 2026
+  // Boxes £200-230, ETBs £140-160, packs £22-28
+  "evolving skies booster box":         215,
+  "evolving skies elite trainer box":   150,
+  "evolving skies etb":                 150,
+  "evolving skies booster pack":         25,
+  "evolving skies tin":                  40,
+  "evolving skies blister":              24,
 
   "chilling reign booster box":         152,
   "chilling reign elite trainer box":    60,
@@ -512,7 +513,7 @@ const BLOCK = [
   // Other card games — must be specific to avoid blocking Pokemon products
   "yu-gi-oh", "yugioh", "magic the gathering", " mtg ", "digimon tcg",
   "one piece card", "dragon ball super card", "disney lorcana", "lorcana",
-  "cardfight vanguard", "weiss schwarz", "buddyfight",
+  "cardfight!!", "cardfight vanguard", "weiss schwarz", "buddyfight",
   "flesh and blood", "union arena", "grand archive",
   "star wars unlimited", "riftbound",
   // Non-card merchandise
@@ -962,12 +963,14 @@ const RETAILERS = [
     ],
   },
   {
-    name: "PACKRAT", base: "https://packratt.co.uk", type: "shopify-json",
+    // Replaces PACKRAT (404) — Chaos Cards is a large UK retailer
+    name: "Chaos Cards", base: "https://www.chaoscards.co.uk", type: "shopify-json",
     collections: [
-      "/collections/pokemon-sealed",
+      "/collections/pokemon-sealed-product",
+      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon-elite-trainer-boxes",
       "/collections/pokemon-tcg",
       "/collections/pokemon",
-      "/collections/all",
     ],
   },
   { name: "Double Sleeved", base: "https://doublesleeved.co.uk", type: "shopify-json" },
@@ -982,29 +985,28 @@ const RETAILERS = [
       "/collections/pokemon-booster-boxes",
       "/collections/pokemon-tcg",
       "/collections/pokemon",
-      "/collections/all",
     ],
   },
   { name: "My TCG",         base: "https://mytcg.co.uk",         type: "shopify-json" },
   { name: "Gathering Games",base: "https://gatheringgames.co.uk",type: "shopify-json" },
-  { name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json",
+  {
+    // Replaces Magic Madhouse (404) — Leisure Games is a well-stocked UK retailer
+    name: "Leisure Games", base: "https://www.leisuregames.com", type: "shopify-json",
     collections: [
       "/collections/pokemon-sealed",
       "/collections/pokemon-tcg",
       "/collections/pokemon",
-      "/collections/all",
     ],
   },
   {
-    name: "Japan2UK", base: "https://japan2uk.com", type: "shopify-json",
+    // Replaces Japan2UK (no endpoint) — Emerald Collectables is active UK Pokemon retailer
+    name: "Emerald Collectables", base: "https://emeraldcollectables.co.uk", type: "shopify-json",
     collections: [
-      "/collections/pokemon-english-sealed",
-      "/collections/english-sealed",
-      "/collections/pokemon-tcg-english",
-      "/collections/pokemon-sealed-english",
       "/collections/pokemon-sealed",
-      "/collections/pokemon-english",
+      "/collections/pokemon-booster-boxes",
       "/collections/pokemon-tcg",
+      "/collections/pokemon",
+      "/collections/all",
     ],
   },
   {
