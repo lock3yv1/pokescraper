@@ -153,11 +153,23 @@ async function getEbaySoldPrice(title, token) {
     }
 
     // Filter junk listings
-    const junk = ["lot ", " lot", "x2", "x3", "x4", "x5", "bundle of",
+    // Title must contain the product type we searched for
+    // e.g. if we searched "booster pack", the result title must also say "booster pack"
+    // This prevents multi-pack lots from contaminating single-pack price averages
+    const titleKeywords = title.toLowerCase();
+    const isBox     = titleKeywords.includes("booster box") && !titleKeywords.includes("half");
+    const isHalf    = titleKeywords.includes("half");
+    const isETB     = titleKeywords.includes("elite trainer") || titleKeywords.includes("etb");
+    const isBundle  = titleKeywords.includes("bundle");
+    const isPack    = titleKeywords.includes("booster pack") && !isBox && !isETB && !isBundle;
+    const isTin     = titleKeywords.includes(" tin");
+
+    const junk = ["lot ", " lot", "x2", "x3", "x4", "x5", "x10", "x6",
+                  "bundle of", "10 packs", "5 packs", "6 packs", "3 packs", "4 packs",
                   "graded", "psa", "bgs", "damaged", "opened",
                   "korean", "japanese", "[jp]", "display case", "acrylic",
                   "near mint", "lightly played", "1st edition", "reverse holo",
-                  "holo card", "full art", "alt art"];
+                  "holo card", "full art", "alt art", "mystery"];
 
     const prices = items
       .filter(item => {
@@ -167,6 +179,12 @@ async function getEbaySoldPrice(title, token) {
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
         if (p <= 0) return false;
+        // Product type cross-check: if we searched for a pack, result must look like a pack
+        // This stops booster box lots appearing when we search "booster pack"
+        if (isPack && !t2.includes("booster pack") && !t2.includes("single pack") && !t2.includes("single booster")) return false;
+        if (isBox && !t2.includes("booster box") && !t2.includes("display")) return false;
+        if (isETB && !t2.includes("elite trainer") && !t2.includes("etb")) return false;
+        if (isBundle && !t2.includes("bundle")) return false;
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
