@@ -211,9 +211,9 @@ async function getEbaySoldPrice(title, token) {
                                 "×2", "×3", "×4", "×5", "bundle", "lot", "set of",
                                 "bulk", "joblot", "job lot", "mixed", "twin pack", "double pack"];
           if (multiSignals.some(ms => t2.includes(ms))) return false;
-          // Hard price cap for single packs — no single booster pack legitimately sells for £25+
-          // Anything above this is a multi-pack lot regardless of how the title is worded
-          if (p > 25) return false;
+          // Hard price cap for single packs — standard modern packs are £5-18 max on eBay UK
+          // Anything above £18 for a "booster pack" listing is a multi-pack lot or error
+          if (p > 18) return false;
         }
         return true;
       })
