@@ -71,26 +71,29 @@ async function getEbayToken() {
 const _ebayPriceCache = new Map();
 
 function buildEbaySearchQuery(title) {
-  // Strip retailer noise, keep set name + product type + "sealed"
-  const t = title.toLowerCase()
-    .replace(/scarlet\s*[&and]+\s*violet\s*/gi, "")
-    .replace(/sword\s*[&and]+\s*shield\s*/gi, "")
-    .replace(/sun\s*[&and]+\s*moon\s*/gi, "")
-    .replace(/pokémon/gi, "pokemon")
-    .replace(/\(.*?\)/g, "")
-    .replace(/[-–—:|]/g, " ")
-    .replace(/[^a-z0-9 ]/g, " ")
-    .replace(/(the|and|of|from|with|for|by|a|an)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Keep it tight — set name + product type only, "pokemon" prefix, "sealed" suffix
-  // This avoids eBay returning totally unrelated results
-  const query = `pokemon ${t} sealed`
-    .replace(/pokemon\s+pokemon/g, "pokemon")
-    .replace(/\s+/g, " ")
-    .trim();
-
+  let t = title.toLowerCase();
+  // Strip GVMS/VAT retailer suffixes (Evo Cards noise)
+  t = t.replace(/0% vat gvms/g, "").replace(/20% vat/g, "").replace(/gvms/g, "");
+  // Strip acrylic case bundle suffix
+  t = t.replace(/acrylic case bundle/g, "").replace(/acrylic.*$/g, "");
+  // Strip damage notes
+  t = t.replace(/slightly damaged/g, "");
+  // Strip series generation prefixes — keep set name only
+  t = t.replace(/scarlet and violet/g, "").replace(/scarlet & violet/g, "")
+       .replace(/sword and shield/g, "").replace(/sword & shield/g, "")
+       .replace(/sun and moon/g, "").replace(/sun & moon/g, "")
+       .replace(/pokémon/g, "pokemon");
+  // Strip parenthetical content
+  t = t.replace(/[(][^)]*[)]/g, "");
+  // Strip punctuation
+  t = t.replace(/[-|:]/g, " ").replace(/[^a-z0-9 ]/g, " ");
+  // Strip noise words
+  t = t.replace(/ (the|and|of|from|with|for|by|a|an|contains|total|authentic|expansion) /g, " ");
+  t = t.replace(/  +/g, " ").trim();
+  // Build final query
+  const query = ("pokemon " + t + " sealed")
+    .replace(/pokemon pokemon/g, "pokemon")
+    .replace(/  +/g, " ").trim();
   return query;
 }
 
@@ -842,6 +845,16 @@ const BLOCK = [
   "sealed case", "display case",
   // Other explicit blocks
   "card lot", "mystery bundle cards", "panini", "topps", "bandai cards",
+  // Individual card condition words — any listing with these is a single card, not sealed
+  "near mint", "lightly played", "moderately played", "heavily played",
+  "light play", "near-mint", "nm/m", "nm ", " lp ", " mp ", " hp ",
+  "1st edition", "shadowless", "unlimited edition",
+  "reverse holo", "holo rare", "full art", "alt art", "special art",
+  // Card number patterns are handled in isValidProduct below
+  "common near", "uncommon near", "rare near", "uncommon reverse",
+  "dent / crease", "crease / mark", "heavy play",
+  // Evo Cards GVMS/VAT noise
+  "0% vat gvms", "20% vat", "gvms", "slightly damaged",
 ];
 
 // ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
@@ -896,6 +909,8 @@ function isValidProduct(title, price) {
   const tn = normaliseTitle(title);
   const blocked = BLOCK.find(k => t.includes(k));
   if (blocked) return false;
+  // Block individual cards: titles with card numbers like "53/109", "008/198"
+  if (/\d{1,3}\/\d{2,3}/.test(t)) return false;
   if (!PRODUCT_TYPES.some(k => tn.includes(normaliseTitle(k)))) return false;
   if (!ENGLISH_SETS.some(s => tn.includes(normaliseTitle(s)))) return false;
   const limits = getPriceLimits(title);
