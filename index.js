@@ -3,6 +3,323 @@ const cheerio = require("cheerio");
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// ─── EBAY API CREDENTIALS (server-side only — never in frontend) ───────────────
+const EBAY_CLIENT_ID     = process.env.EBAY_CLIENT_ID;
+const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET;
+const EBAY_SANDBOX       = process.env.EBAY_SANDBOX === "true"; // set false for production
+
+// eBay endpoint roots
+const EBAY_AUTH_URL    = EBAY_SANDBOX
+  ? "https://api.sandbox.ebay.com/identity/v1/oauth2/token"
+  : "https://api.ebay.com/identity/v1/oauth2/token";
+const EBAY_FINDING_URL = EBAY_SANDBOX
+  ? "https://svcs.sandbox.ebay.com/services/search/FindingService/v1"
+  : "https://svcs.ebay.com/services/search/FindingService/v1";
+const EBAY_BROWSE_URL  = EBAY_SANDBOX
+  ? "https://api.sandbox.ebay.com/buy/browse/v1"
+  : "https://api.ebay.com/buy/browse/v1";
+
+// ─── PHASE 1: OAUTH TOKEN ─────────────────────────────────────────────────────
+// Tokens expire in 7,200s (2 hrs). Cache in memory for the scan run.
+let _ebayToken = null;
+let _ebayTokenExpiry = 0;
+
+async function getEbayToken() {
+  if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) {
+    console.log("  ⚠️  eBay credentials not set — skipping eBay API calls");
+    return null;
+  }
+  // Return cached token if still valid (with 60s buffer)
+  if (_ebayToken && Date.now() < _ebayTokenExpiry - 60000) {
+    return _ebayToken;
+  }
+  try {
+    const creds = Buffer.from(`${EBAY_CLIENT_ID}:${EBAY_CLIENT_SECRET}`).toString("base64");
+    const res = await fetch(EBAY_AUTH_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${creds}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
+    });
+    if (!res.ok) {
+      console.log(`  ❌ eBay token error: HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    _ebayToken = data.access_token;
+    _ebayTokenExpiry = Date.now() + (data.expires_in * 1000);
+    console.log(`  ✅ eBay token acquired (expires in ${Math.round(data.expires_in / 60)}min)`);
+    return _ebayToken;
+  } catch (e) {
+    console.log(`  ❌ eBay token fetch failed: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── PHASE 2: EBAY SOLD PRICE LOOKUP ─────────────────────────────────────────
+// Uses eBay Finding API — findCompletedItems (sold listings)
+// Returns real median sold price from recent UK eBay sales.
+// This REPLACES the hardcoded MARKET table lookups over time.
+
+// In-memory cache: avoid duplicate API calls for same product within a scan
+const _ebayPriceCache = new Map();
+
+function buildEbaySearchQuery(title) {
+  // Normalise product title into an eBay search query
+  // Goal: "Pokemon Scarlet & Violet — Evolving Skies Booster Box (36 packs)"
+  //   → "pokemon evolving skies booster box sealed"
+  const t = title.toLowerCase()
+    .replace(/scarlet\s*[&and]+\s*violet/gi, "")
+    .replace(/sword\s*[&and]+\s*shield/gi, "")
+    .replace(/sun\s*[&and]+\s*moon/gi, "")
+    .replace(/\(.*?\)/g, "")          // remove parenthetical content
+    .replace(/[-–—:]/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Always prefix with "pokemon" and suffix with "sealed" for clean results
+  const query = `pokemon ${t} sealed`
+    .replace(/pokemon pokemon/g, "pokemon")  // avoid double
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return encodeURIComponent(query);
+}
+
+async function getEbaySoldPrice(title) {
+  // Check cache first
+  const cacheKey = title.toLowerCase().trim();
+  if (_ebayPriceCache.has(cacheKey)) {
+    return _ebayPriceCache.get(cacheKey);
+  }
+
+  // If no credentials, return null (will fall back to MARKET table)
+  if (!EBAY_CLIENT_ID) {
+    return null;
+  }
+
+  const query = buildEbaySearchQuery(title);
+
+  // eBay Finding API — findCompletedItems (sold listings only)
+  // UK country code = 3, USD/GBP handled by marketplace
+  const url = [
+    EBAY_FINDING_URL,
+    "?OPERATION-NAME=findCompletedItems",
+    "&SERVICE-VERSION=1.0.0",
+    `&SECURITY-APPNAME=${EBAY_CLIENT_ID}`,
+    "&RESPONSE-DATA-FORMAT=JSON",
+    "&REST-PAYLOAD",
+    `&keywords=${query}`,
+    "&itemFilter(0).name=SoldItemsOnly",
+    "&itemFilter(0).value=true",
+    "&itemFilter(1).name=ListingCountry",
+    "&itemFilter(1).value=3",              // UK
+    "&itemFilter(2).name=Currency",
+    "&itemFilter(2).value=GBP",
+    "&itemFilter(3).name=Condition",
+    "&itemFilter(3).value=1000",           // New/Unopened
+    "&itemFilter(4).name=HideDuplicateItems",
+    "&itemFilter(4).value=true",
+    "&sortOrder=EndTimeSoonest",           // most recent first
+    "&paginationInput.entriesPerPage=20",
+    "&paginationInput.pageNumber=1",
+  ].join("");
+
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "ShinyDen/1.0" },
+    });
+
+    if (!res.ok) {
+      console.log(`    eBay Finding API: HTTP ${res.status} for "${title.slice(0, 40)}"`);
+      _ebayPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const data = await res.json();
+    const root = data?.findCompletedItemsResponse?.[0];
+
+    if (root?.ack?.[0] !== "Success" && root?.ack?.[0] !== "Warning") {
+      const errMsg = root?.errorMessage?.[0]?.error?.[0]?.message?.[0] || "unknown";
+      console.log(`    eBay API error for "${title.slice(0, 40)}": ${errMsg}`);
+      _ebayPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const items = root?.searchResult?.[0]?.item || [];
+    if (!items.length) {
+      console.log(`    eBay: no sold results for "${title.slice(0, 40)}"`);
+      _ebayPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Extract prices, filter junk
+    const prices = items
+      .map(item => {
+        const t2 = (item.title?.[0] || "").toLowerCase();
+        const price = parseFloat(item.sellingStatus?.[0]?.convertedCurrentPrice?.[0]?.["__value__"] || 0);
+        // Filter out: lots, job lots, graded, damaged, bundles of multiple
+        const junk = ["lot", "x2", "x3", "x4", "x5", "bundle of", "graded", "psa", "bgs",
+                      "damaged", "opened", "korean", "japanese"];
+        if (junk.some(j => t2.includes(j))) return null;
+        if (price <= 0) return null;
+        return price;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+
+    if (!prices.length) {
+      _ebayPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Remove top 10% outliers (e.g. £800 joke listings sometimes appear in sold)
+    const trimCount = Math.floor(prices.length * 0.1);
+    const trimmed = prices.slice(0, prices.length - trimCount);
+
+    // Weighted median — recent items weighted higher (items are sorted EndTimeSoonest)
+    // Simple approach: take median of trimmed set
+    const mid = Math.floor(trimmed.length / 2);
+    const median = trimmed.length % 2 === 0
+      ? (trimmed[mid - 1] + trimmed[mid]) / 2
+      : trimmed[mid];
+
+    const fairValue = Math.round(median * 100) / 100;
+
+    // Confidence based on sample size + recency
+    let confidence = "LOW";
+    if (trimmed.length >= 8) confidence = "HIGH";
+    else if (trimmed.length >= 3) confidence = "MEDIUM";
+
+    // Freshness: date of most recent sold item
+    const freshness = items[0]?.listingInfo?.[0]?.endTime?.[0] || new Date().toISOString();
+
+    const result = {
+      fairValue,
+      confidence,
+      sampleSize: trimmed.length,
+      freshness,
+      source: "ebay_sold",
+    };
+
+    console.log(`    eBay sold: "${title.slice(0,35)}" → £${fairValue} (n=${trimmed.length}, ${confidence})`);
+    _ebayPriceCache.set(cacheKey, result);
+    return result;
+
+  } catch (e) {
+    console.log(`    eBay API exception for "${title.slice(0,35)}": ${e.message}`);
+    _ebayPriceCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// ─── PHASE 6: EBAY BROWSE API — live listing lowest price ────────────────────
+// Cross-check: is the retailer price actually below what's currently on eBay?
+// Uses Bearer token from Phase 1.
+
+async function getEbayLowestListing(title, token) {
+  if (!token) return null;
+
+  const query = buildEbaySearchQuery(title);
+  const url = `${EBAY_BROWSE_URL}/item_summary/search` +
+    `?q=${query}` +
+    `&filter=buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,conditions:{NEW}` +
+    `&sort=price` +
+    `&limit=5`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const items = data?.itemSummaries || [];
+    if (!items.length) return null;
+
+    const t2 = title.toLowerCase();
+    const junk = ["lot", "x2", "x3", "graded", "psa", "damaged", "opened", "korean", "japanese"];
+
+    const prices = items
+      .filter(item => {
+        const it = (item.title || "").toLowerCase();
+        return !junk.some(j => it.includes(j));
+      })
+      .map(item => parseFloat(item.price?.value || 0))
+      .filter(p => p > 0)
+      .sort((a, b) => a - b);
+
+    return prices.length > 0 ? prices[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── PHASE 4: DEAL SCORE (0-100) — multi-factor, eBay-data-driven ────────────
+function computeDealScore(buyNow, rrp, ebayResult, holdData) {
+  let score = 50; // neutral baseline
+
+  const fairValue = ebayResult?.fairValue || null;
+  const confidence = ebayResult?.confidence || "NONE";
+  const sampleSize = ebayResult?.sampleSize || 0;
+
+  // ── 1. Flip ROI vs eBay fair value (max ±40 points) ──────────────────────
+  if (fairValue && buyNow > 0) {
+    const roi = ((fairValue - buyNow) / buyNow) * 100;
+    score += Math.min(40, Math.max(-40, roi * 1.4));
+  }
+
+  // ── 2. eBay data confidence (max +15 points) ──────────────────────────────
+  if (confidence === "HIGH")   score += 15;
+  else if (confidence === "MEDIUM") score += 8;
+  else if (confidence === "LOW")    score += 3;
+  // NONE = 0 bonus
+
+  // ── 3. Sample size bonus (max +5 points) ──────────────────────────────────
+  if (sampleSize >= 10) score += 5;
+  else if (sampleSize >= 5) score += 3;
+
+  // ── 4. RRP comparison — secondary signal (max +8 points) ─────────────────
+  if (rrp && buyNow > 0) {
+    const vsRrp = ((rrp - buyNow) / rrp) * 100;
+    if (vsRrp >= 20) score += 8;
+    else if (vsRrp >= 10) score += 5;
+    else if (vsRrp >= 0) score += 2;
+    else if (vsRrp <= -30) score -= 5; // significantly above RRP, penalise
+  }
+
+  // ── 5. Hold score — benefits borderline deals (max +7 points) ─────────────
+  if (holdData) {
+    score += (holdData.holdScore || holdData.score || 0) * 0.7;
+  }
+
+  // ── 6. Freshness — stale data penalty ────────────────────────────────────
+  if (ebayResult?.freshness) {
+    const ageHours = (Date.now() - new Date(ebayResult.freshness)) / 3600000;
+    if (ageHours > 168) score -= 8; // > 1 week old: penalise
+    else if (ageHours > 72) score -= 3;
+  }
+
+  return Math.round(Math.max(0, Math.min(100, score)));
+}
+
+// ─── PHASE 4: GRADE FROM DEAL SCORE ───────────────────────────────────────────
+function gradeFromScore(score) {
+  if (score >= 80) return "S";
+  if (score >= 68) return "A";
+  if (score >= 55) return "B";
+  if (score >= 42) return "C";
+  if (score >= 30) return "H";
+  return "D";
+}
+
+
 // ─── RRP TABLE (UK official retail prices) ─────────────────────────────────
 // Sources: Pokemon Center UK, official retailer SRPs, May 2026
 const RRP = {
@@ -1301,6 +1618,11 @@ async function runScan() {
   console.log(`\n🔍 ${RETAILERS.length} retailers · ${new Date().toLocaleTimeString("en-GB")}`);
   const findings = [];
 
+  // ── PHASE 1: Acquire eBay OAuth token for Browse API ──────────────────────
+  const ebayToken = await getEbayToken();
+  if (ebayToken) console.log("  📡 eBay Browse API ready");
+  else console.log("  ⚠️  eBay Browse API unavailable — sold price lookup still works via Finding API");
+
   for (const retailer of RETAILERS) {
     console.log(`  → ${retailer.name}`);
 
@@ -1371,11 +1693,13 @@ async function runScan() {
   // S grade = ROI ≥ 25%, A grade = ROI ≥ 15%, or strong hold score ≥ 8
   const alertWorthy = findings.filter(f => {
     const market = getMarket(f.title);
-    if (!market) return false;
+    const hold = getHoldData(f.title);
+    if (!market) return (hold && hold.holdScore >= 9); // no price data but exceptional hold
     const net = market - f.price - (market * 0.13) - 4;
     const roi = Math.round((net / f.price) * 100);
-    const hold = getHoldData(f.title);
+    // Alert on: good flip ROI OR strong hold with acceptable loss
     return roi >= 15 || (hold && hold.holdScore >= 8 && roi > -10);
+    // Note: once eBay data flows through, dealScore will also gate alerts here
   });
 
   console.log(`📣 ${alertWorthy.length} alert-worthy deals (ROI ≥ 15% or strong hold)`);
@@ -1432,17 +1756,49 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
 
     // Save all current in-stock deals to GitHub for the app
     if (found && found.length > 0) {
-      await saveDealsToGitHub(found.map(f => ({
-        id: `${f.retailer}::${f.title.toLowerCase().trim()}`,
-        product: f.title,
-        retailer: f.retailer,
-        buyNow: f.price,
-        rrp: getRRP(f.title),
-        resell: getMarket(f.title),
-        url: f.url,
-        image: f.image || null,
-        lastSeen: new Date().toISOString(),
-      })));
+      console.log("\n📡 Enriching deals with eBay sold price data...");
+
+      // Build enriched deals with eBay data
+      const enriched = [];
+      for (const f of found) {
+        const rrp = getRRP(f.title);
+        const holdData = getHoldData(f.title);
+
+        // Phase 2: Get real eBay sold price (replaces/supplements MARKET table)
+        const ebayResult = await getEbaySoldPrice(f.title);
+        await delay(400); // respectful rate limiting
+
+        // Determine best resell value: eBay sold > hardcoded MARKET table
+        const resellFromMarket = getMarket(f.title);
+        const resell = ebayResult?.fairValue || resellFromMarket || null;
+
+        // Phase 4: Compute deal score
+        const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
+        const grade = gradeFromScore(dealScore);
+
+        enriched.push({
+          id: `${f.retailer}::${f.title.toLowerCase().trim()}`,
+          product: f.title,
+          retailer: f.retailer,
+          buyNow: f.price,
+          rrp,
+          resell,
+          // eBay intelligence fields (new)
+          dealScore,
+          grade,
+          resellSource: ebayResult ? "ebay_sold" : (resellFromMarket ? "static_table" : null),
+          resellConfidence: ebayResult?.confidence || null,
+          resellSampleSize: ebayResult?.sampleSize || null,
+          resellFreshness: ebayResult?.freshness || null,
+          url: f.url,
+          image: f.image || null,
+          lastSeen: new Date().toISOString(),
+          isPriceDrop: f.isPriceDrop || false,
+          oldPrice: f.oldPrice || null,
+        });
+      }
+
+      await saveDealsToGitHub(enriched);
     }
   } catch (e) {
     console.error("Fatal:", e.message);
