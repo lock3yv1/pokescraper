@@ -206,15 +206,14 @@ async function getEbaySoldPrice(title, token) {
         if (isPack) {
           if (!t2.includes("booster pack") && !t2.includes("single pack") && !t2.includes("single booster")) return false;
           // Reject anything that implies multiple packs
-          const multiSignals = ["packs", " 2 ", " 3 ", " 4 ", " 5 ", " 6 ", " 10 ",
-                                "x2 ", "x3 ", "x4 ", "x5 ", "2x ", "3x ", "4x ", "5x ",
+          const multiSignals = [" 2 pack", " 3 pack", " 4 pack", " 5 pack", " 6 pack",
+                                " 2x ", " 3x ", " 4x ", " 5x ", "x2 ", "x3 ", "x4 ", "x5 ",
                                 "×2", "×3", "×4", "×5", "bundle", "lot", "set of",
-                                "bulk", "joblot", "job lot", "collection", "mixed"];
+                                "bulk", "joblot", "job lot", "mixed", "twin pack", "double pack"];
           if (multiSignals.some(ms => t2.includes(ms))) return false;
-          // Also reject if price > 3x what a typical single pack should cost
-          // Single SV packs: £5-15, SwSh packs: £8-20, older: £10-35
-          // If somehow > £45, it's almost certainly a multi-pack lot
-          if (p > 45) return false;
+          // Hard price cap for single packs — no single booster pack legitimately sells for £25+
+          // Anything above this is a multi-pack lot regardless of how the title is worded
+          if (p > 25) return false;
         }
         return true;
       })
