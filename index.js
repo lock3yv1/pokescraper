@@ -450,6 +450,116 @@ async function saveEbayDealsToGitHub(deals) {
   }
 }
 
+
+// ─── MULTI-SOURCE PRICING ────────────────────────────────────────────────────
+// Combines Browse API (live BIN) + PokeData (eBay sold history) 
+// for more accurate fair market values
+
+// In-memory cache for external price lookups
+const _externalPriceCache = new Map();
+
+// PokeData.io — free, no auth, has eBay UK sold price history
+// Returns recent sold prices which are more accurate than BIN listings
+async function getPokeDataPrice(productName) {
+  const cacheKey = `pokedata:${productName.toLowerCase()}`;
+  if (_externalPriceCache.has(cacheKey)) return _externalPriceCache.get(cacheKey);
+
+  try {
+    // Build search query — PokeData uses set name + product type
+    const encoded = encodeURIComponent(productName.toLowerCase()
+      .replace(/pokemon/gi, "").replace(/tcg/gi, "").replace(/sealed/gi, "").trim());
+    
+    const res = await fetch(
+      `https://www.pokedata.io/api/v0/products/search?query=${encoded}&language=English`,
+      {
+        headers: { "User-Agent": "ShinyDen/1.0 (price research)", "Accept": "application/json" },
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    
+    if (!res.ok) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+    
+    const data = await res.json();
+    const products = data?.products || data?.results || [];
+    
+    if (!products.length) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Find best matching product
+    const nameLower = productName.toLowerCase();
+    const match = products.find(p => {
+      const pn = (p.name || p.product_name || "").toLowerCase();
+      return nameLower.includes("booster box") && pn.includes("booster box") ||
+             nameLower.includes("elite trainer") && (pn.includes("elite trainer") || pn.includes("etb")) ||
+             nameLower.includes("booster pack") && pn.includes("booster pack");
+    }) || products[0];
+
+    if (!match) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Get the eBay UK sold price (market_price field or ebay_price)
+    const marketPrice = match.market_price_gbp || match.ebay_price_gbp || 
+                        match.market_price || match.price_gbp || null;
+
+    if (!marketPrice || marketPrice <= 0) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const result = { price: parseFloat(marketPrice), source: "pokedata", confidence: "MEDIUM" };
+    console.log(`    PokeData: "${productName.slice(0,35)}" → £${result.price}`);
+    _externalPriceCache.set(cacheKey, result);
+    return result;
+
+  } catch (e) {
+    _externalPriceCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// ── COMBINED FAIR VALUE ────────────────────────────────────────────────────────
+// Combines Browse API (live BIN) + PokeData (sold history)
+// Weights sold data higher than BIN data (more reliable)
+async function getCombinedFairValue(title, browseResult) {
+  // Try PokeData for sold price data
+  const pokeData = await getPokeDataPrice(title);
+
+  if (!browseResult && !pokeData) return null;
+
+  if (browseResult && pokeData?.price) {
+    // Both sources: weight sold data 60%, BIN data 40%
+    const combined = pokeData.price * 0.60 + browseResult.fairValue * 0.40;
+    return {
+      fairValue: Math.round(combined * 100) / 100,
+      confidence: "HIGH",
+      sampleSize: browseResult.sampleSize,
+      freshness: new Date().toISOString(),
+      source: "ebay_browse+pokedata",
+      sources: { browse: browseResult.fairValue, pokedata: pokeData.price },
+    };
+  }
+
+  if (pokeData?.price) {
+    return {
+      fairValue: pokeData.price,
+      confidence: "MEDIUM",
+      sampleSize: 0,
+      freshness: new Date().toISOString(),
+      source: "pokedata",
+    };
+  }
+
+  // Browse API only
+  return { ...browseResult, source: "ebay_browse" };
+}
+
 // ─── PHASE 4: DEAL SCORE (0-100) — multi-factor, eBay-data-driven ────────────
 function computeDealScore(buyNow, rrp, ebayResult, holdData) {
   let score = 50; // neutral baseline
@@ -1969,13 +2079,16 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
         // Phase 2: Get real eBay sold price (replaces/supplements MARKET table)
         const ebayResult = await getEbaySoldPrice(f.title, ebayToken);
         await delay(400); // respectful rate limiting
+        // Multi-source: combine Browse API with PokeData sold prices
+        const combinedResult = await getCombinedFairValue(f.title, ebayResult);
+        await delay(200);
 
         // Determine best resell value: eBay sold > hardcoded MARKET table
         const resellFromMarket = getMarket(f.title);
-        const resell = ebayResult?.fairValue || resellFromMarket || null;
+        const resell = combinedResult?.fairValue || ebayResult?.fairValue || resellFromMarket || null;
 
         // Phase 4: Compute deal score
-        const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
+        const dealScore = computeDealScore(f.price, rrp, combinedResult || ebayResult, holdData);
         const grade = gradeFromScore(dealScore, !!holdData);
 
         enriched.push({
@@ -1988,7 +2101,7 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
           // eBay intelligence fields (new)
           dealScore,
           grade,
-          resellSource: ebayResult ? "ebay_sold" : (resellFromMarket ? "static_table" : null),
+          resellSource: combinedResult?.source || (ebayResult ? "ebay_browse" : resellFromMarket ? "static_table" : null),
           resellConfidence: ebayResult?.confidence || null,
           resellSampleSize: ebayResult?.sampleSize || null,
           resellFreshness: ebayResult?.freshness || null,
