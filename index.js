@@ -90,9 +90,16 @@ function buildEbaySearchQuery(title) {
   // Strip noise words
   t = t.replace(/ (the|and|of|from|with|for|by|a|an|contains|total|authentic|expansion) /g, " ");
   t = t.replace(/  +/g, " ").trim();
-  // Build final query
-  const query = ("pokemon " + t + " sealed")
-    .replace(/pokemon pokemon/g, "pokemon")
+  // For single booster packs: add "1x" to disambiguate from multi-pack lots
+  // This significantly reduces contamination from "4x", "x12", "lot" listings
+  const isSinglePack = t.includes("booster pack") && 
+    !t.includes("booster box") && !t.includes("half") &&
+    !t.includes("elite trainer") && !t.includes("bundle");
+
+  const prefix = isSinglePack ? "1x single" : "pokemon";
+  const query = (prefix + " " + t + " sealed")
+    .replace(/^1x single pokemon/, "1x single pokemon")
+    .replace(/^pokemon pokemon/, "pokemon")
     .replace(/  +/g, " ").trim();
   return query;
 }
@@ -211,9 +218,16 @@ async function getEbaySoldPrice(title, token) {
                                 "×2", "×3", "×4", "×5", "bundle", "lot", "set of",
                                 "bulk", "joblot", "job lot", "mixed", "twin pack", "double pack"];
           if (multiSignals.some(ms => t2.includes(ms))) return false;
-          // Hard price cap for single packs — standard modern packs are £5-18 max on eBay UK
-          // Anything above £18 for a "booster pack" listing is a multi-pack lot or error
-          if (p > 18) return false;
+          // Tiered price cap for single packs based on set age/rarity
+          // Standard SwSh/SV: £5-14. Premium older sets: £14-25.
+          // These are set in the searchedSet context below via priceFloor.
+          const isRarePack = searchedSet && [
+            "hidden fates", "shining fates", "champions path", "cosmic eclipse",
+            "evolving skies", "chilling reign", "battle styles", "vivid voltage",
+            "celebrations", "prismatic evolutions",
+          ].includes(searchedSet);
+          const packMax = isRarePack ? 25 : 13; // standard SwSh/SV packs cap at £13
+          if (p > packMax) return false;
         }
         return true;
       })
@@ -227,11 +241,13 @@ async function getEbaySoldPrice(title, token) {
       return null;
     }
 
-    // Dynamic trimming: remove bottom 15% (free/broken listings) + top 20% (scalpers)
-    // Then take the MEAN of the remaining middle ~65%
-    // This gives true average market price regardless of product type
-    const trimBot = Math.max(0, Math.floor(prices.length * 0.15));
-    const trimTop = Math.max(0, Math.floor(prices.length * 0.20));
+    // Dynamic trimming — more aggressive for packs (higher contamination risk)
+    // Standard: remove bottom 15% and top 20% → middle 65%
+    // Packs: remove bottom 20% and top 30% → middle 50% (tighter, more accurate)
+    const botPct = isPack ? 0.20 : 0.15;
+    const topPct = isPack ? 0.30 : 0.20;
+    const trimBot = Math.max(0, Math.floor(prices.length * botPct));
+    const trimTop = Math.max(0, Math.floor(prices.length * topPct));
     const trimmed = prices.slice(trimBot, prices.length - trimTop);
 
     if (!trimmed.length) {
