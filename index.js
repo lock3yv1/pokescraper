@@ -202,8 +202,10 @@ async function getEbaySoldPrice(title, token) {
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
         if (p <= 0) return false;
-        // Set name cross-validation: eBay listing must mention the same set
-        if (searchedSet && !t2.includes(searchedSet)) return false;
+        // Set name cross-validation: eBay listing should mention the same set
+        // Only enforce for sets with unique names (avoid false rejections on short names)
+        const setNameLong = searchedSet && searchedSet.length > 5;
+        if (setNameLong && !t2.includes(searchedSet)) return false;
         // Product type cross-check
         if (isBox && !t2.includes("booster box") && !t2.includes("display")) return false;
         if (isETB && !t2.includes("elite trainer") && !t2.includes("etb")) return false;
@@ -228,7 +230,7 @@ async function getEbaySoldPrice(title, token) {
             "evolving skies", "chilling reign", "battle styles", "vivid voltage",
             "celebrations", "prismatic evolutions",
           ].includes(searchedSet);
-          const packMax = isRarePack ? 25 : 13; // standard SwSh/SV packs cap at £13
+          const packMax = isRarePack ? 28 : 15; // standard SwSh/SV packs cap at £15
           if (p > packMax) return false;
         }
         return true;
@@ -282,6 +284,169 @@ async function getEbaySoldPrice(title, token) {
     console.log(`    eBay Browse exception for "${title.slice(0,35)}": ${e.message}`);
     _ebayPriceCache.set(cacheKey, null);
     return null;
+  }
+}
+
+
+// ─── EBAY LIVE DEAL SCANNER ───────────────────────────────────────────────────
+// Searches eBay UK directly for underpriced sealed Pokémon products
+// Completely separate from retailer scraping — these ARE eBay listings
+// Writes to ebay_deals.json in the lock3ys-den repo
+
+const EBAY_SEARCH_TARGETS = [
+  // High-demand sets where deals appear frequently
+  { q: "pokemon evolving skies booster box sealed",      type: "Booster Box",    marketMin: 190, marketMax: 260 },
+  { q: "pokemon hidden fates booster box sealed",        type: "Booster Box",    marketMin: 200, marketMax: 320 },
+  { q: "pokemon shining fates elite trainer box sealed", type: "ETB",            marketMin: 80,  marketMax: 160 },
+  { q: "pokemon prismatic evolutions etb sealed",        type: "ETB",            marketMin: 60,  marketMax: 120 },
+  { q: "pokemon evolving skies elite trainer box sealed",type: "ETB",            marketMin: 100, marketMax: 200 },
+  { q: "pokemon brilliant stars elite trainer box",      type: "ETB",            marketMin: 110, marketMax: 180 },
+  { q: "pokemon chilling reign booster box sealed",      type: "Booster Box",    marketMin: 200, marketMax: 280 },
+  { q: "pokemon silver tempest booster box sealed",      type: "Booster Box",    marketMin: 280, marketMax: 500 },
+  { q: "pokemon surging sparks booster box sealed",      type: "Booster Box",    marketMin: 200, marketMax: 320 },
+  { q: "pokemon 151 booster bundle sealed",              type: "Booster Bundle", marketMin: 40,  marketMax: 90  },
+  { q: "pokemon destined rivals booster box sealed",     type: "Booster Box",    marketMin: 100, marketMax: 160 },
+  { q: "pokemon champions path etb sealed",              type: "ETB",            marketMin: 200, marketMax: 400 },
+  { q: "pokemon crown zenith elite trainer box sealed",  type: "ETB",            marketMin: 90,  marketMax: 140 },
+  { q: "pokemon cosmic eclipse booster box sealed",      type: "Booster Box",    marketMin: 250, marketMax: 500 },
+  { q: "pokemon celebrations elite trainer box sealed",  type: "ETB",            marketMin: 60,  marketMax: 140 },
+];
+
+// How good a deal needs to be to appear in the eBay tab
+const EBAY_MIN_DISCOUNT_PCT = 8; // at least 8% below our known market range floor
+
+async function scanEbayForDeals(token) {
+  if (!token) {
+    console.log("  ⚠️ No eBay token — skipping eBay deal scan");
+    return [];
+  }
+
+  console.log("\n🛒 Scanning eBay UK for live deals...");
+  const deals = [];
+  const junkTerms = ["lot ", " lot", "x2 ", "x3 ", "x4 ", " 2x", " 3x",
+                      "sealed (2)", "case of", "rip seal", "damaged",
+                      "opened", "korean", "japanese", "[jp]", "bundle of",
+                      "graded", "psa", "bgs", "display case"];
+
+  for (const target of EBAY_SEARCH_TARGETS) {
+    try {
+      const params = new URLSearchParams({
+        q: target.q,
+        filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
+        sort: "price",
+        limit: "20",
+      });
+
+      const res = await fetch(`${EBAY_BROWSE_URL}/item_summary/search?${params}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
+          Accept: "application/json",
+        },
+      });
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const items = data?.itemSummaries || [];
+
+      for (const item of items) {
+        const title = item.title || "";
+        const tl = title.toLowerCase();
+        const price = parseFloat(item.price?.value || 0);
+        const currency = item.price?.currency;
+
+        // Basic validation
+        if (!price || currency !== "GBP") continue;
+        if (junkTerms.some(j => tl.includes(j))) continue;
+        if (price < target.marketMin * 0.5) continue; // too cheap = fake/wrong
+
+        // Is this a deal? Must be below our known market floor
+        const dealThreshold = target.marketMin * (1 - EBAY_MIN_DISCOUNT_PCT / 100);
+        if (price > dealThreshold) continue;
+
+        // Calculate deal strength
+        const midMarket = (target.marketMin + target.marketMax) / 2;
+        const fvf = midMarket * 0.129 + 0.30;
+        const netProfit = +(midMarket - price - fvf - 4).toFixed(2);
+        const roi = Math.round(netProfit / price * 100);
+        const pctBelow = Math.round((1 - price / target.marketMin) * 100);
+
+        if (roi < 5) continue; // must have at least 5% flip ROI
+
+        const image = item.thumbnailImages?.[0]?.imageUrl || item.image?.imageUrl || null;
+        const url = item.itemWebUrl || item.itemAffiliateWebUrl || "";
+
+        deals.push({
+          id: item.itemId,
+          title,
+          type: target.type,
+          price,
+          marketFloor: target.marketMin,
+          marketCeil: target.marketMax,
+          midMarket,
+          netProfit,
+          roi,
+          pctBelow,
+          image,
+          url,
+          condition: item.condition || "New",
+          seller: item.seller?.username || "",
+          watchCount: item.watchCount || 0,
+          source: "ebay_live",
+          scannedAt: new Date().toISOString(),
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 500)); // rate limiting
+    } catch (e) {
+      console.log(`  eBay scan error for "${target.q.slice(0,30)}": ${e.message}`);
+    }
+  }
+
+  // Deduplicate by itemId, sort by ROI
+  const seen = new Set();
+  const unique = deals
+    .filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
+    .sort((a, b) => b.roi - a.roi);
+
+  console.log(`  📦 Found ${unique.length} eBay deals worth acting on`);
+  return unique;
+}
+
+async function saveEbayDealsToGitHub(deals) {
+  if (!GH_TOKEN) return;
+  try {
+    let sha;
+    try {
+      const ex = await fetch(
+        `https://api.github.com/repos/${GH_REPO}/contents/ebay_deals.json`,
+        { headers: { Authorization: `token ${GH_TOKEN}`, "User-Agent": "pokescraper" } }
+      );
+      if (ex.ok) sha = (await ex.json()).sha;
+    } catch {}
+
+    const payload = { deals, updatedAt: new Date().toISOString(), count: deals.length };
+    const content = Buffer.from(JSON.stringify(payload, null, 2)).toString("base64");
+    const res = await fetch(
+      `https://api.github.com/repos/${GH_REPO}/contents/ebay_deals.json`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${GH_TOKEN}`,
+          "Content-Type": "application/json",
+          "User-Agent": "pokescraper",
+        },
+        body: JSON.stringify({
+          message: `ebay deals update ${new Date().toISOString()}`,
+          content,
+          ...(sha ? { sha } : {}),
+        }),
+      }
+    );
+    if (res.ok) console.log(`  ✅ Saved ${deals.length} eBay deals to ebay_deals.json`);
+    else console.log("  ❌ eBay deals save error:", (await res.json()).message);
+  } catch (e) {
+    console.log("  ❌ eBay deals save error:", e.message);
   }
 }
 
@@ -566,8 +731,8 @@ const MARKET = {
   "astral radiance booster pack":         8,
 
   "brilliant stars booster box":        225,
-  "brilliant stars elite trainer box":  128,  // May 2026 eBay UK
-  "brilliant stars etb":                128,
+  "brilliant stars elite trainer box":  148,  // May 2026 eBay UK (API confirmed)
+  "brilliant stars etb":                148,
   "brilliant stars booster pack":        10,
   "brilliant stars tin":                 18,
 
@@ -1837,6 +2002,14 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
 
       // Phase 5: Write holdData alongside deals so frontend reads from single source
       await saveDealsToGitHub(enriched, HOLD_DATA);
+
+      // ── EBAY LIVE DEAL SCAN — completely separate from retailer data ──
+      const ebayDeals = await scanEbayForDeals(ebayToken);
+      if (ebayDeals.length > 0) {
+        await saveEbayDealsToGitHub(ebayDeals);
+      } else {
+        console.log("  ℹ️ No eBay deals found this scan");
+      }
     }
   } catch (e) {
     console.error("Fatal:", e.message);
