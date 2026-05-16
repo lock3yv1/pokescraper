@@ -155,7 +155,29 @@ async function getEbaySoldPrice(title, token) {
     // Filter junk listings
     const junk = ["lot ", " lot", "x2", "x3", "x4", "x5", "bundle of",
                   "graded", "psa", "bgs", "damaged", "opened",
-                  "korean", "japanese", "[jp]", "display case", "acrylic"];
+                  "korean", "japanese", "[jp]", "display case", "acrylic",
+                  "near mint", "lightly played", "1st edition", "reverse holo",
+                  "holo card", "full art", "alt art"];
+
+    // Price sanity bounds by product type — prevents outlier prices corrupting averages
+    // e.g. a booster pack should NEVER show as £40+ on eBay
+    function getEbayPriceBounds(t) {
+      if (t.includes("ultra premium") || t.includes("upc")) return { min:80,  max:450  };
+      if (t.includes("booster box") && !t.includes("half"))  return { min:50,  max:800  };
+      if (t.includes("half booster") || t.includes("half box")) return { min:30, max:400 };
+      if (t.includes("elite trainer") || t.includes("etb"))  return { min:30,  max:300  };
+      if (t.includes("booster bundle"))                       return { min:12,  max:120  };
+      if (t.includes("premium collection"))                   return { min:25,  max:200  };
+      if (t.includes("booster pack") || t.includes("single")) return { min:3,  max:35   };
+      if (t.includes("mini tin"))                             return { min:8,   max:40   };
+      if (t.includes("tin"))                                  return { min:12,  max:80   };
+      if (t.includes("blister"))                              return { min:8,   max:60   };
+      if (t.includes("collection"))                           return { min:20,  max:250  };
+      return { min:5, max:600 };
+    }
+
+    const titleLower = title.toLowerCase();
+    const bounds = getEbayPriceBounds(titleLower);
 
     const prices = items
       .filter(item => {
@@ -163,6 +185,9 @@ async function getEbaySoldPrice(title, token) {
         if (junk.some(j => t2.includes(j))) return false;
         // Must be in GBP
         if (item.price?.currency !== "GBP") return false;
+        const p = parseFloat(item.price?.value || 0);
+        // Apply product-type price sanity bounds
+        if (p < bounds.min || p > bounds.max) return false;
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
@@ -261,12 +286,12 @@ function computeDealScore(buyNow, rrp, ebayResult, holdData) {
 
 // ─── PHASE 4: GRADE FROM DEAL SCORE ───────────────────────────────────────────
 function gradeFromScore(score) {
-  if (score >= 80) return "S";
-  if (score >= 68) return "A";
-  if (score >= 55) return "B";
-  if (score >= 42) return "C";
-  if (score >= 30) return "H";
-  return "D";
+  if (score >= 82) return "S"; // HOT DEAL
+  if (score >= 68) return "A"; // BUY
+  if (score >= 54) return "B"; // FLIP
+  if (score >= 40) return "C"; // WEAK
+  if (score >= 28) return "H"; // HOLD
+  return "D";                  // AVOID
 }
 
 
@@ -983,12 +1008,12 @@ function getDealRating(buy, rrp, market) {
   // Rating is purely based on flip profit potential vs eBay market
   // RRP is irrelevant — what matters is can you make money
   if (flipProfit !== null) {
-    if (flipRoi >= 25)  return { label: "🔥 EXCEPTIONAL DEAL", stars: "⭐⭐⭐⭐⭐" };
-    if (flipRoi >= 15)  return { label: "🟢 EXCELLENT DEAL",   stars: "⭐⭐⭐⭐⭐" };
-    if (flipRoi >= 5)   return { label: "✅ GOOD DEAL",        stars: "⭐⭐⭐⭐" };
-    if (flipRoi >= 0)   return { label: "⚖️ BREAK EVEN",       stars: "⭐⭐⭐" };
-    if (flipRoi >= -10) return { label: "⚠️ SMALL LOSS",       stars: "⭐⭐" };
-    return               { label: "❌ NOT WORTH IT",           stars: "⭐" };
+    if (flipRoi >= 25)  return { label: "🔥 HOT DEAL",        stars: "⭐⭐⭐⭐⭐" };
+    if (flipRoi >= 15)  return { label: "✅ BUY",             stars: "⭐⭐⭐⭐⭐" };
+    if (flipRoi >= 5)   return { label: "💰 FLIP",            stars: "⭐⭐⭐⭐" };
+    if (flipRoi >= 0)   return { label: "⚠️ WEAK",            stars: "⭐⭐⭐" };
+    if (flipRoi >= -10) return { label: "⚠️ WEAK",            stars: "⭐⭐" };
+    return               { label: "❌ AVOID",                 stars: "⭐" };
   }
 
   // No market data — fall back to vs market %
