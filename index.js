@@ -171,6 +171,21 @@ async function getEbaySoldPrice(title, token) {
                   "near mint", "lightly played", "1st edition", "reverse holo",
                   "holo card", "full art", "alt art", "mystery"];
 
+    // Extract set name from original title for cross-validation
+    // If we searched "Shining Fates Booster Pack", eBay result must contain "shining fates"
+    const setNames = Object.keys({
+      "evolving skies":1,"hidden fates":1,"prismatic evolutions":1,"shining fates":1,
+      "champions path":1,"surging sparks":1,"chilling reign":1,"battle styles":1,
+      "151":1,"temporal forces":1,"paradox rift":1,"obsidian flames":1,
+      "paldean fates":1,"stellar crown":1,"journey together":1,"astral radiance":1,
+      "brilliant stars":1,"fusion strike":1,"silver tempest":1,"lost origin":1,
+      "crown zenith":1,"vivid voltage":1,"darkness ablaze":1,"rebel clash":1,
+      "ascended heroes":1,"destined rivals":1,"perfect order":1,"chaos rising":1,
+      "phantasmal flames":1,"cosmic eclipse":1,"unified minds":1,"unbroken bonds":1,
+      "base set":1,"neo genesis":1,"celebrations":1,
+    });
+    const searchedSet = setNames.find(sn => titleKeywords.includes(sn)) || null;
+
     const prices = items
       .filter(item => {
         const t2 = (item.title || "").toLowerCase();
@@ -179,12 +194,28 @@ async function getEbaySoldPrice(title, token) {
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
         if (p <= 0) return false;
-        // Product type cross-check: if we searched for a pack, result must look like a pack
-        // This stops booster box lots appearing when we search "booster pack"
-        if (isPack && !t2.includes("booster pack") && !t2.includes("single pack") && !t2.includes("single booster")) return false;
+        // Set name cross-validation: eBay listing must mention the same set
+        if (searchedSet && !t2.includes(searchedSet)) return false;
+        // Product type cross-check
         if (isBox && !t2.includes("booster box") && !t2.includes("display")) return false;
         if (isETB && !t2.includes("elite trainer") && !t2.includes("etb")) return false;
         if (isBundle && !t2.includes("bundle")) return false;
+
+        // PACK-SPECIFIC: aggressive single-pack enforcement
+        // eBay has many multi-pack lots - we ONLY want single packs
+        if (isPack) {
+          if (!t2.includes("booster pack") && !t2.includes("single pack") && !t2.includes("single booster")) return false;
+          // Reject anything that implies multiple packs
+          const multiSignals = ["packs", " 2 ", " 3 ", " 4 ", " 5 ", " 6 ", " 10 ",
+                                "x2 ", "x3 ", "x4 ", "x5 ", "2x ", "3x ", "4x ", "5x ",
+                                "×2", "×3", "×4", "×5", "bundle", "lot", "set of",
+                                "bulk", "joblot", "job lot", "collection", "mixed"];
+          if (multiSignals.some(ms => t2.includes(ms))) return false;
+          // Also reject if price > 3x what a typical single pack should cost
+          // Single SV packs: £5-15, SwSh packs: £8-20, older: £10-35
+          // If somehow > £45, it's almost certainly a multi-pack lot
+          if (p > 45) return false;
+        }
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
@@ -1003,7 +1034,7 @@ function getHoldData(title) {
 
 function getDealRating(buy, rrp, market) {
   const vsMarket = market ? ((buy - market) / market) * 100 : null;
-  const flipProfit = market ? (market - buy - (market * 0.13) - 4.00) : null;
+  const flipProfit = market ? (market - buy - (market * 0.129 + 0.30) - 4.00) : null;
   const flipRoi = (flipProfit !== null && buy > 0) ? (flipProfit / buy * 100) : null;
 
   // Rating is purely based on flip profit potential vs eBay market
@@ -1482,7 +1513,7 @@ function buildAlert(f) {
 
   const vsMarket = (market > 0) ? ((f.price - market) / market * 100) : null;
   const vsRrp    = (rrp > 0)    ? ((f.price - rrp)    / rrp    * 100) : null;
-  const ebayFee  = market ? +(market * 0.13).toFixed(2) : null;
+  const ebayFee  = market ? +(market * 0.129 + 0.30).toFixed(2) : null;
   const postage  = 4.00;
   const flipNet  = market ? +(market - f.price - ebayFee - postage).toFixed(2) : null;
   const flipRoi  = (flipNet !== null && f.price > 0) ? Math.round(flipNet / f.price * 100) : null;
@@ -1683,7 +1714,7 @@ async function runScan() {
     const market = getMarket(f.title);
     const hold = getHoldData(f.title);
     if (!market) return (hold && hold.holdScore >= 9); // no price data but exceptional hold
-    const net = market - f.price - (market * 0.13) - 4;
+    const net = market - f.price - (market * 0.129 + 0.30) - 4;
     const roi = Math.round((net / f.price) * 100);
     // Alert on: good flip ROI OR strong hold with acceptable loss
     return roi >= 15 || (hold && hold.holdScore >= 8 && roi > -10);
