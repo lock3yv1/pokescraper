@@ -176,7 +176,8 @@ async function getEbaySoldPrice(title, token) {
                   "graded", "psa", "bgs", "damaged", "opened",
                   "korean", "japanese", "[jp]", "display case", "acrylic",
                   "near mint", "lightly played", "1st edition", "reverse holo",
-                  "holo card", "full art", "alt art", "mystery"];
+                  "holo card", "full art", "alt art", "mystery",
+                  "sealed (2)", "sealed(2)", "case of", "rip seal", "ripped seal"];
 
     // Extract set name from original title for cross-validation
     // If we searched "Shining Fates Booster Pack", eBay result must contain "shining fates"
@@ -206,6 +207,7 @@ async function getEbaySoldPrice(title, token) {
         // Product type cross-check
         if (isBox && !t2.includes("booster box") && !t2.includes("display")) return false;
         if (isETB && !t2.includes("elite trainer") && !t2.includes("etb")) return false;
+        if (isETB && (p < 25 || p > 280)) return false; // ETB sanity bounds
         if (isBundle && !t2.includes("bundle")) return false;
 
         // PACK-SPECIFIC: aggressive single-pack enforcement
@@ -542,36 +544,36 @@ const MARKET = {
 
   // ── SWORD & SHIELD ERA ────────────────────────────────────────────────
   "crown zenith booster box":           128,
-  "crown zenith elite trainer box":      60,
+  "crown zenith elite trainer box":     118,
   "crown zenith etb":                    60,
   "crown zenith booster pack":           10,
   "crown zenith tin":                    19,
 
   "silver tempest booster box":         112,
-  "silver tempest elite trainer box":    52,
+  "silver tempest elite trainer box":   108,
   "silver tempest etb":                  52,
   "silver tempest booster pack":         10,
   "silver tempest tin":                  17,
 
   "lost origin booster box":            122,
-  "lost origin elite trainer box":       50,
+  "lost origin elite trainer box":       95,
   "lost origin etb":                     50,
   "lost origin booster pack":             8.50,
 
   "astral radiance booster box":        120,
-  "astral radiance elite trainer box":   48,
+  "astral radiance elite trainer box":  100,
   "astral radiance etb":                 48,
   "astral radiance booster pack":         8,
 
-  "brilliant stars booster box":        142,
-  "brilliant stars elite trainer box":   56,
-  "brilliant stars etb":                 56,
+  "brilliant stars booster box":        225,
+  "brilliant stars elite trainer box":  128,  // May 2026 eBay UK
+  "brilliant stars etb":                128,
   "brilliant stars booster pack":        10,
   "brilliant stars tin":                 18,
 
-  "fusion strike booster box":          138,
-  "fusion strike elite trainer box":     50,
-  "fusion strike etb":                   50,
+  "fusion strike booster box":          215,
+  "fusion strike elite trainer box":     95,
+  "fusion strike etb":                   95,
   "fusion strike booster pack":           9.50,
 
   // Evolving Skies (SWSH07) — UK median May 2026
@@ -584,14 +586,14 @@ const MARKET = {
   "evolving skies blister":              24,
 
   "chilling reign booster box":         152,
-  "chilling reign elite trainer box":    60,
-  "chilling reign etb":                  60,
+  "chilling reign elite trainer box":   115,
+  "chilling reign etb":                 115,
   "chilling reign booster pack":         12,
   "chilling reign tin":                  21,
 
   "battle styles booster box":          172,
-  "battle styles elite trainer box":     62,
-  "battle styles etb":                   62,
+  "battle styles elite trainer box":    132,
+  "battle styles etb":                  132,
   "battle styles booster pack":          11,
   "battle styles tin":                   21,
 
