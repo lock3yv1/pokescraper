@@ -1367,7 +1367,20 @@ async function runScan() {
 
   console.log(`\n📊 ${findings.length} new confirmed deals`);
 
-  for (const f of findings) {
+  // Only send Telegram alerts for genuinely good deals
+  // S grade = ROI ≥ 25%, A grade = ROI ≥ 15%, or strong hold score ≥ 8
+  const alertWorthy = findings.filter(f => {
+    const market = getMarket(f.title);
+    if (!market) return false;
+    const net = market - f.price - (market * 0.13) - 4;
+    const roi = Math.round((net / f.price) * 100);
+    const hold = getHoldData(f.title);
+    return roi >= 15 || (hold && hold.holdScore >= 8 && roi > -10);
+  });
+
+  console.log(`📣 ${alertWorthy.length} alert-worthy deals (ROI ≥ 15% or strong hold)`);
+
+  for (const f of alertWorthy) {
     await sendAlert(f);
     await delay(1200);
   }
