@@ -1657,7 +1657,7 @@ async function runScan() {
   }
 
   if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
-  return findings.map(f => ({ ...f, store: f.retailer }));
+  return { findings: findings.map(f => ({ ...f, store: f.retailer })), ebayToken };
 }
 
 // ─── SAVE DEALS TO GITHUB ─────────────────────────────────────────────────────
@@ -1699,7 +1699,7 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
 
 (async () => {
   try {
-    const found = await runScan();
+    const { findings: found, ebayToken } = await runScan();
 
     // Save all current in-stock deals to GitHub for the app
     if (found && found.length > 0) {
