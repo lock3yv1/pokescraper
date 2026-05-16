@@ -23,4 +23,6 @@ jobs:
       - name: Run scraper
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM​​​​​​​​​​​​​​​​
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node index.js
