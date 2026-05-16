@@ -383,13 +383,13 @@ const MARKET = {
 
   // Destined Rivals (ME02/SV10) — eBay UK boxes £95-115, median ~£105
   // Half boxes £55-65, ETBs £48-55
-  "destined rivals booster box":        105,
-  "destined rivals elite trainer box":   52,
-  "destined rivals etb":                 52,
-  "destined rivals booster bundle":      28,
+  "destined rivals booster box":        125,  // Updated May 2026 — eBay UK median
+  "destined rivals elite trainer box":   58,  // Updated May 2026
+  "destined rivals etb":                 58,
+  "destined rivals booster bundle":      32,
   "destined rivals half booster box":    60,
   "destined rivals half box":            60,
-  "destined rivals booster pack":         5.50,
+  "destined rivals booster pack":          7.00,  // SV pack pricing
   "destined rivals blister":             12,
   "destined rivals tin":                 25,
 
@@ -902,6 +902,8 @@ const BLOCK = [
   "sealed case", "display case",
   // Other explicit blocks
   "card lot", "mystery bundle cards", "panini", "topps", "bandai cards",
+  // Obsidia TCG uses lottery/raffle pricing — not real buyable prices
+  "obsidia-tcg", "obsidia tcg",
   // Individual card condition words — any listing with these is a single card, not sealed
   "near mint", "lightly played", "moderately played", "heavily played",
   "light play", "near-mint", "nm/m", "nm ", " lp ", " mp ", " hp ",
@@ -1389,10 +1391,7 @@ const RETAILERS = [
     name: "Evo Cards", base: "https://evocards.co.uk", type: "shopify-json",
     collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
   },
-  {
-    name: "Obsidia TCG", base: "https://obsidia-tcg.store", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
-  },
+
   {
     name: "Buy Any Cards", base: "https://buyanycards.co.uk", type: "shopify-json",
     collections: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
