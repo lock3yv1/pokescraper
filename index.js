@@ -104,33 +104,37 @@ async function getEbaySoldPrice(title) {
   const query = buildEbaySearchQuery(title);
 
   // eBay Finding API — findCompletedItems (sold listings only)
-  // UK country code = 3, USD/GBP handled by marketplace
-  const url = [
-    EBAY_FINDING_URL,
-    "?OPERATION-NAME=findCompletedItems",
-    "&SERVICE-VERSION=1.0.0",
-    `&SECURITY-APPNAME=${EBAY_CLIENT_ID}`,
-    "&RESPONSE-DATA-FORMAT=JSON",
-    "&REST-PAYLOAD",
-    `&keywords=${query}`,
-    "&itemFilter(0).name=SoldItemsOnly",
-    "&itemFilter(0).value=true",
-    "&itemFilter(1).name=ListingCountry",
-    "&itemFilter(1).value=3",              // UK
-    "&itemFilter(2).name=Currency",
-    "&itemFilter(2).value=GBP",
-    "&itemFilter(3).name=Condition",
-    "&itemFilter(3).value=1000",           // New/Unopened
-    "&itemFilter(4).name=HideDuplicateItems",
-    "&itemFilter(4).value=true",
-    "&sortOrder=EndTimeSoonest",           // most recent first
-    "&paginationInput.entriesPerPage=20",
-    "&paginationInput.pageNumber=1",
-  ].join("");
+  // Key fixes vs previous version:
+  //   - Remove Condition filter (not valid on completed items endpoint)
+  //   - Remove Currency filter (use site ID instead: EBAY-GB = 3)
+  //   - Use siteid=3 for eBay UK
+  //   - Use URLSearchParams to guarantee correct encoding
+  const params = new URLSearchParams({
+    "OPERATION-NAME":           "findCompletedItems",
+    "SERVICE-VERSION":          "1.0.0",
+    "SECURITY-APPNAME":         EBAY_CLIENT_ID,
+    "RESPONSE-DATA-FORMAT":     "JSON",
+    "siteid":                   "3",
+    "keywords":                 decodeURIComponent(query),
+    "itemFilter(0).name":       "SoldItemsOnly",
+    "itemFilter(0).value":      "true",
+    "itemFilter(1).name":       "ListingCountry",
+    "itemFilter(1).value":      "3",
+    "itemFilter(2).name":       "HideDuplicateItems",
+    "itemFilter(2).value":      "true",
+    "sortOrder":                "EndTimeSoonest",
+    "paginationInput.entriesPerPage": "20",
+    "paginationInput.pageNumber":     "1",
+  });
+
+  const url = `${EBAY_FINDING_URL}?${params.toString()}`;
 
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "ShinyDen/1.0" },
+      headers: {
+        "User-Agent": "ShinyDen/1.0",
+        "Accept": "application/json",
+      },
     });
 
     if (!res.ok) {
