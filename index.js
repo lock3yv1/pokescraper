@@ -159,26 +159,6 @@ async function getEbaySoldPrice(title, token) {
                   "near mint", "lightly played", "1st edition", "reverse holo",
                   "holo card", "full art", "alt art"];
 
-    // Price sanity bounds by product type — prevents outlier prices corrupting averages
-    // e.g. a booster pack should NEVER show as £40+ on eBay
-    function getEbayPriceBounds(t) {
-      if (t.includes("ultra premium") || t.includes("upc")) return { min:80,  max:450  };
-      if (t.includes("booster box") && !t.includes("half"))  return { min:50,  max:800  };
-      if (t.includes("half booster") || t.includes("half box")) return { min:30, max:400 };
-      if (t.includes("elite trainer") || t.includes("etb"))  return { min:30,  max:300  };
-      if (t.includes("booster bundle"))                       return { min:12,  max:120  };
-      if (t.includes("premium collection"))                   return { min:25,  max:200  };
-      if (t.includes("booster pack") || t.includes("single")) return { min:3,  max:35   };
-      if (t.includes("mini tin"))                             return { min:8,   max:40   };
-      if (t.includes("tin"))                                  return { min:12,  max:80   };
-      if (t.includes("blister"))                              return { min:8,   max:60   };
-      if (t.includes("collection"))                           return { min:20,  max:250  };
-      return { min:5, max:600 };
-    }
-
-    const titleLower = title.toLowerCase();
-    const bounds = getEbayPriceBounds(titleLower);
-
     const prices = items
       .filter(item => {
         const t2 = (item.title || "").toLowerCase();
@@ -186,8 +166,7 @@ async function getEbaySoldPrice(title, token) {
         // Must be in GBP
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
-        // Apply product-type price sanity bounds
-        if (p < bounds.min || p > bounds.max) return false;
+        if (p <= 0) return false;
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
@@ -200,17 +179,21 @@ async function getEbaySoldPrice(title, token) {
       return null;
     }
 
-    // Remove top 15% outliers (high-priced scalpers skew the average up)
-    const trimCount = Math.max(0, Math.floor(prices.length * 0.15));
-    const trimmed = prices.slice(0, prices.length - trimCount);
+    // Dynamic trimming: remove bottom 15% (free/broken listings) + top 20% (scalpers)
+    // Then take the MEAN of the remaining middle ~65%
+    // This gives true average market price regardless of product type
+    const trimBot = Math.max(0, Math.floor(prices.length * 0.15));
+    const trimTop = Math.max(0, Math.floor(prices.length * 0.20));
+    const trimmed = prices.slice(trimBot, prices.length - trimTop);
 
-    // Median of trimmed set = fair market value
-    const mid = Math.floor(trimmed.length / 2);
-    const median = trimmed.length % 2 === 0
-      ? (trimmed[mid - 1] + trimmed[mid]) / 2
-      : trimmed[mid];
+    if (!trimmed.length) {
+      _ebayPriceCache.set(cacheKey, null);
+      return null;
+    }
 
-    const fairValue = Math.round(median * 100) / 100;
+    // Mean of trimmed set = fair average market price
+    const mean = trimmed.reduce((sum, p) => sum + p, 0) / trimmed.length;
+    const fairValue = Math.round(mean * 100) / 100;
 
     // Confidence based on sample size
     let confidence = "LOW";
