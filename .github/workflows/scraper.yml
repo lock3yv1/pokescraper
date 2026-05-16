@@ -2,7 +2,7 @@ name: PokeScraper
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -23,20 +23,4 @@ jobs:
       - name: Run scraper
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node index.js
-
-  keep-alive:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-      - name: Ping to keep workflow active
-        run: |
-          git config user.email "action@github.com"
-          git config user.name "GitHub Action"
-          git​​​​​​​​​​​​​​​​
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM​​​​​​​​​​​​​​​​
