@@ -332,12 +332,13 @@ function computeDealScore(buyNow, rrp, ebayResult, holdData) {
 }
 
 // ─── PHASE 4: GRADE FROM DEAL SCORE ───────────────────────────────────────────
-function gradeFromScore(score) {
+function gradeFromScore(score, hasHoldData) {
   if (score >= 82) return "S"; // HOT DEAL
   if (score >= 68) return "A"; // BUY
   if (score >= 54) return "B"; // FLIP
-  if (score >= 40) return "C"; // WEAK
-  if (score >= 28) return "H"; // HOLD
+  if (score >= 40) return "C"; // MARGINAL
+  // H (HOLD) only if score is 28-39 AND product has meaningful hold data
+  if (score >= 28 && hasHoldData) return "H"; // HOLD
   return "D";                  // AVOID
 }
 
@@ -1358,8 +1359,8 @@ const RETAILERS = [
   {
     name: "Chaos Cards", base: "https://www.chaoscards.co.uk", type: "shopify-json",
     collections: [
-      "/collections/pokemon-sealed-product",
-      "/collections/pokemon-booster-boxes",
+      "/collections/pokemon",
+      "/collections/tcg-pokemon",
       "/collections/pokemon-elite-trainer-boxes",
       "/collections/pokemon-tcg",
       "/collections/pokemon",
@@ -1420,7 +1421,7 @@ const RETAILERS = [
     collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
   },
   {
-    name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json",
+    name: "Magic Madhouse", base: "https://www.magicmadhouse.co.uk", type: "shopify-json",
     collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
   },
   {
@@ -1440,7 +1441,7 @@ const RETAILERS = [
     collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
   },
   {
-    name: "PACKRAT", base: "https://packratt.co.uk", type: "shopify-json",
+    name: "PACKRAT", base: "https://packrat.co.uk", type: "shopify-json",
     collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon-tcg", "/collections/pokemon", "/collections/all"],
   },
   // ── LARGE GENERAL RETAILERS ──────────────────────────────────────────────────
@@ -1750,7 +1751,7 @@ async function runScan() {
 const GH_TOKEN = process.env.GH_TOKEN;
 const GH_REPO = "lock3yv1/lock3ys-den";
 
-async function saveDealsToGitHub(deals) {
+async function saveDealsToGitHub(deals, holdData) {
   if (!GH_TOKEN) { console.log("⚠️ No GH_TOKEN — skipping deals.json"); return; }
   try {
     let sha;
@@ -1762,7 +1763,8 @@ async function saveDealsToGitHub(deals) {
       if (existing.ok) sha = (await existing.json()).sha;
     } catch {}
 
-    const content = Buffer.from(JSON.stringify(deals, null, 2)).toString("base64");
+    const payload = holdData ? { deals, holdData, updatedAt: new Date().toISOString() } : deals;
+  const content = Buffer.from(JSON.stringify(payload, null, 2)).toString("base64");
     const res = await fetch(
       `https://api.github.com/repos/${GH_REPO}/contents/deals.json`,
       {
@@ -1807,7 +1809,7 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
 
         // Phase 4: Compute deal score
         const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
-        const grade = gradeFromScore(dealScore);
+        const grade = gradeFromScore(dealScore, !!holdData);
 
         enriched.push({
           id: `${f.retailer}::${f.title.toLowerCase().trim()}`,
@@ -1831,7 +1833,8 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
         });
       }
 
-      await saveDealsToGitHub(enriched);
+      // Phase 5: Write holdData alongside deals so frontend reads from single source
+      await saveDealsToGitHub(enriched, HOLD_DATA);
     }
   } catch (e) {
     console.error("Fatal:", e.message);
