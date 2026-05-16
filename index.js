@@ -976,6 +976,7 @@ const CORE_SEARCHES = [
 
 // ─── RETAILERS ───────────────────────────────────────────────────────────────
 const RETAILERS = [
+  // ── SPECIALIST POKEMON/TCG RETAILERS ────────────────────────────────────────
   {
     name: "Total Cards", base: "https://totalcards.net", type: "shopify-json",
     collections: [
@@ -989,7 +990,7 @@ const RETAILERS = [
       "/collections/pokemon",
     ],
   },
-  { name: "Titan Cards",    base: "https://titancards.co.uk",    type: "shopify-json" },
+  { name: "Titan Cards",       base: "https://titancards.co.uk",          type: "shopify-json" },
   {
     name: "Eterna Cards", base: "https://eternacards.co.uk", type: "shopify-json",
     collections: [
@@ -1002,7 +1003,6 @@ const RETAILERS = [
     ],
   },
   {
-    // Replaces PACKRAT (404) — Chaos Cards is a large UK retailer
     name: "Chaos Cards", base: "https://www.chaoscards.co.uk", type: "shopify-json",
     collections: [
       "/collections/pokemon-sealed-product",
@@ -1012,7 +1012,7 @@ const RETAILERS = [
       "/collections/pokemon",
     ],
   },
-  { name: "Double Sleeved", base: "https://doublesleeved.co.uk", type: "shopify-json" },
+  { name: "Double Sleeved",    base: "https://doublesleeved.co.uk",       type: "shopify-json" },
   {
     name: "Toys N Geek", base: "https://www.toysngeek.co.uk", type: "shopify-json",
     collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
@@ -1026,35 +1026,80 @@ const RETAILERS = [
       "/collections/pokemon",
     ],
   },
-  { name: "My TCG",         base: "https://mytcg.co.uk",         type: "shopify-json" },
-  { name: "Gathering Games",base: "https://gatheringgames.co.uk",type: "shopify-json" },
+  { name: "My TCG",            base: "https://mytcg.co.uk",               type: "shopify-json" },
+  { name: "Gathering Games",   base: "https://gatheringgames.co.uk",      type: "shopify-json" },
   {
-    // Replaces Magic Madhouse (404) — Leisure Games is a well-stocked UK retailer
     name: "Leisure Games", base: "https://www.leisuregames.com", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-sealed",
-      "/collections/pokemon-tcg",
-      "/collections/pokemon",
-    ],
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-tcg", "/collections/pokemon"],
   },
   {
-    // Replaces Japan2UK (no endpoint) — Emerald Collectables is active UK Pokemon retailer
     name: "Emerald Collectables", base: "https://emeraldcollectables.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-sealed",
-      "/collections/pokemon-booster-boxes",
-      "/collections/pokemon-tcg",
-      "/collections/pokemon",
-      "/collections/all",
-    ],
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon-tcg", "/collections/pokemon", "/collections/all"],
   },
+  {
+    name: "Zatu Games", base: "https://www.board-game.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon"],
+  },
+  {
+    name: "Big Orbit Cards", base: "https://www.bigorbitcards.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed-products", "/collections/pokemon-booster-boxes", "/collections/pokemon"],
+  },
+  // ── NEWLY ADDED RETAILERS ───────────────────────────────────────────────────
+  {
+    name: "Minted TCG", base: "https://mintedtcg.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Evo Cards", base: "https://evocards.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Obsidia TCG", base: "https://obsidia-tcg.store", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Buy Any Cards", base: "https://buyanycards.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "TCG Shop UK", base: "https://tcgshopuk.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Goblin Gaming", base: "https://goblinslair.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
+  },
+  {
+    name: "Magic Madhouse", base: "https://magicmadhouse.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Ace Comics", base: "https://www.acecomics.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
+  },
+  {
+    name: "Dice & Cards", base: "https://diceandcards.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
+  },
+  {
+    name: "Mana Gaming", base: "https://managingedge.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
+  },
+  {
+    name: "Card Merchant", base: "https://thecardmerchant.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
+  },
+  {
+    name: "PACKRAT", base: "https://packratt.co.uk", type: "shopify-json",
+    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon-tcg", "/collections/pokemon", "/collections/all"],
+  },
+  // ── LARGE GENERAL RETAILERS ──────────────────────────────────────────────────
   {
     name: "Smyths", base: "https://www.smythstoys.com", type: "html",
     urls: [
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+tin",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+collection+box",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+bundle",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
       "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
@@ -1069,23 +1114,6 @@ const RETAILERS = [
       "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
       "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
-    ],
-  },
-  // New UK retailers
-  {
-    name: "Big Orbit Cards", base: "https://www.bigorbitcards.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-sealed-products",
-      "/collections/pokemon-booster-boxes",
-      "/collections/pokemon",
-    ],
-  },
-  {
-    name: "Zatu Games", base: "https://www.board-game.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-tcg",
-      "/collections/pokemon-sealed",
-      "/collections/pokemon",
     ],
   },
   {
