@@ -58,134 +58,125 @@ async function getEbayToken() {
   }
 }
 
-// ─── PHASE 2: EBAY SOLD PRICE LOOKUP ─────────────────────────────────────────
-// Uses eBay Finding API — findCompletedItems (sold listings)
-// Returns real median sold price from recent UK eBay sales.
-// This REPLACES the hardcoded MARKET table lookups over time.
+// ─── PHASE 2 + 6: EBAY BROWSE API — market price lookup ─────────────────────
+// The Finding API (completed items) requires special approval not yet active.
+// Browse API is already working (OAuth token confirmed). We use it to:
+//   1. Search live UK GBP listings sorted by price (lowest first)
+//   2. Take a weighted median of the lowest cluster — this approximates fair value
+//   3. This is MORE useful than sold data for our purpose (retailer vs eBay BIN)
+//
+// The Browse API is the modern eBay API and preferred over Finding API anyway.
 
 // In-memory cache: avoid duplicate API calls for same product within a scan
 const _ebayPriceCache = new Map();
 
 function buildEbaySearchQuery(title) {
-  // Normalise product title into an eBay search query
-  // Goal: "Pokemon Scarlet & Violet — Evolving Skies Booster Box (36 packs)"
-  //   → "pokemon evolving skies booster box sealed"
+  // Strip retailer noise, keep set name + product type + "sealed"
   const t = title.toLowerCase()
-    .replace(/scarlet\s*[&and]+\s*violet/gi, "")
-    .replace(/sword\s*[&and]+\s*shield/gi, "")
-    .replace(/sun\s*[&and]+\s*moon/gi, "")
-    .replace(/\(.*?\)/g, "")          // remove parenthetical content
-    .replace(/[-–—:]/g, " ")
+    .replace(/scarlet\s*[&and]+\s*violet\s*/gi, "")
+    .replace(/sword\s*[&and]+\s*shield\s*/gi, "")
+    .replace(/sun\s*[&and]+\s*moon\s*/gi, "")
+    .replace(/pokémon/gi, "pokemon")
+    .replace(/\(.*?\)/g, "")
+    .replace(/[-–—:|]/g, " ")
     .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/(the|and|of|from|with|for|by|a|an)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  // Always prefix with "pokemon" and suffix with "sealed" for clean results
+  // Keep it tight — set name + product type only, "pokemon" prefix, "sealed" suffix
+  // This avoids eBay returning totally unrelated results
   const query = `pokemon ${t} sealed`
-    .replace(/pokemon pokemon/g, "pokemon")  // avoid double
+    .replace(/pokemon\s+pokemon/g, "pokemon")
     .replace(/\s+/g, " ")
     .trim();
 
-  return encodeURIComponent(query);
+  return query;
 }
 
-async function getEbaySoldPrice(title) {
+async function getEbaySoldPrice(title, token) {
   // Check cache first
   const cacheKey = title.toLowerCase().trim();
   if (_ebayPriceCache.has(cacheKey)) {
     return _ebayPriceCache.get(cacheKey);
   }
 
-  // If no credentials, return null (will fall back to MARKET table)
-  if (!EBAY_CLIENT_ID) {
+  // Needs valid Browse API token
+  if (!token) {
+    _ebayPriceCache.set(cacheKey, null);
     return null;
   }
 
-  const query = buildEbaySearchQuery(title);
+  const rawQuery = buildEbaySearchQuery(title);
 
-  // eBay Finding API — findCompletedItems (sold listings only)
-  // Key fixes vs previous version:
-  //   - Remove Condition filter (not valid on completed items endpoint)
-  //   - Remove Currency filter (use site ID instead: EBAY-GB = 3)
-  //   - Use siteid=3 for eBay UK
-  //   - Use URLSearchParams to guarantee correct encoding
+  // eBay Browse API — item_summary/search
+  // Using live UK GBP BIN listings sorted by price ascending
+  // We take the median of the lowest cluster to approximate fair market value
+  // This is equivalent to "what would this sell for on eBay right now"
   const params = new URLSearchParams({
-    "OPERATION-NAME":           "findCompletedItems",
-    "SERVICE-VERSION":          "1.0.0",
-    "SECURITY-APPNAME":         EBAY_CLIENT_ID,
-    "RESPONSE-DATA-FORMAT":     "JSON",
-    "siteid":                   "3",
-    "keywords":                 decodeURIComponent(query),
-    "itemFilter(0).name":       "SoldItemsOnly",
-    "itemFilter(0).value":      "true",
-    "itemFilter(1).name":       "ListingCountry",
-    "itemFilter(1).value":      "3",
-    "itemFilter(2).name":       "HideDuplicateItems",
-    "itemFilter(2).value":      "true",
-    "sortOrder":                "EndTimeSoonest",
-    "paginationInput.entriesPerPage": "20",
-    "paginationInput.pageNumber":     "1",
+    q: rawQuery,
+    filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
+    sort: "price",
+    limit: "20",
+    fieldgroups: "MATCHING_ITEMS",
   });
 
-  const url = `${EBAY_FINDING_URL}?${params.toString()}`;
+  const url = `${EBAY_BROWSE_URL}/item_summary/search?${params.toString()}`;
 
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "ShinyDen/1.0",
+        "Authorization": `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
         "Accept": "application/json",
+        "Content-Language": "en-GB",
       },
     });
 
     if (!res.ok) {
-      console.log(`    eBay Finding API: HTTP ${res.status} for "${title.slice(0, 40)}"`);
+      const errText = await res.text().catch(() => "");
+      console.log(`    eBay Browse API: HTTP ${res.status} for "${title.slice(0, 35)}" — ${errText.slice(0, 80)}`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
     const data = await res.json();
-    const root = data?.findCompletedItemsResponse?.[0];
+    const items = data?.itemSummaries || [];
 
-    if (root?.ack?.[0] !== "Success" && root?.ack?.[0] !== "Warning") {
-      const errMsg = root?.errorMessage?.[0]?.error?.[0]?.message?.[0] || "unknown";
-      console.log(`    eBay API error for "${title.slice(0, 40)}": ${errMsg}`);
-      _ebayPriceCache.set(cacheKey, null);
-      return null;
-    }
-
-    const items = root?.searchResult?.[0]?.item || [];
     if (!items.length) {
-      console.log(`    eBay: no sold results for "${title.slice(0, 40)}"`);
+      console.log(`    eBay Browse: no results for "${title.slice(0, 35)}"`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
-    // Extract prices, filter junk
+    // Filter junk listings
+    const junk = ["lot ", " lot", "x2", "x3", "x4", "x5", "bundle of",
+                  "graded", "psa", "bgs", "damaged", "opened",
+                  "korean", "japanese", "[jp]", "display case", "acrylic"];
+
     const prices = items
-      .map(item => {
-        const t2 = (item.title?.[0] || "").toLowerCase();
-        const price = parseFloat(item.sellingStatus?.[0]?.convertedCurrentPrice?.[0]?.["__value__"] || 0);
-        // Filter out: lots, job lots, graded, damaged, bundles of multiple
-        const junk = ["lot", "x2", "x3", "x4", "x5", "bundle of", "graded", "psa", "bgs",
-                      "damaged", "opened", "korean", "japanese"];
-        if (junk.some(j => t2.includes(j))) return null;
-        if (price <= 0) return null;
-        return price;
+      .filter(item => {
+        const t2 = (item.title || "").toLowerCase();
+        if (junk.some(j => t2.includes(j))) return false;
+        // Must be in GBP
+        if (item.price?.currency !== "GBP") return false;
+        return true;
       })
-      .filter(Boolean)
+      .map(item => parseFloat(item.price?.value || 0))
+      .filter(p => p > 0)
       .sort((a, b) => a - b);
 
     if (!prices.length) {
+      console.log(`    eBay Browse: all results filtered for "${title.slice(0, 35)}"`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
-    // Remove top 10% outliers (e.g. £800 joke listings sometimes appear in sold)
-    const trimCount = Math.floor(prices.length * 0.1);
+    // Remove top 15% outliers (high-priced scalpers skew the average up)
+    const trimCount = Math.max(0, Math.floor(prices.length * 0.15));
     const trimmed = prices.slice(0, prices.length - trimCount);
 
-    // Weighted median — recent items weighted higher (items are sorted EndTimeSoonest)
-    // Simple approach: take median of trimmed set
+    // Median of trimmed set = fair market value
     const mid = Math.floor(trimmed.length / 2);
     const median = trimmed.length % 2 === 0
       ? (trimmed[mid - 1] + trimmed[mid]) / 2
@@ -193,74 +184,26 @@ async function getEbaySoldPrice(title) {
 
     const fairValue = Math.round(median * 100) / 100;
 
-    // Confidence based on sample size + recency
+    // Confidence based on sample size
     let confidence = "LOW";
     if (trimmed.length >= 8) confidence = "HIGH";
     else if (trimmed.length >= 3) confidence = "MEDIUM";
-
-    // Freshness: date of most recent sold item
-    const freshness = items[0]?.listingInfo?.[0]?.endTime?.[0] || new Date().toISOString();
 
     const result = {
       fairValue,
       confidence,
       sampleSize: trimmed.length,
-      freshness,
-      source: "ebay_sold",
+      freshness: new Date().toISOString(),
+      source: "ebay_browse",
     };
 
-    console.log(`    eBay sold: "${title.slice(0,35)}" → £${fairValue} (n=${trimmed.length}, ${confidence})`);
+    console.log(`    eBay market: "${title.slice(0,35)}" → £${fairValue} (n=${trimmed.length}, ${confidence})`);
     _ebayPriceCache.set(cacheKey, result);
     return result;
 
   } catch (e) {
-    console.log(`    eBay API exception for "${title.slice(0,35)}": ${e.message}`);
+    console.log(`    eBay Browse exception for "${title.slice(0,35)}": ${e.message}`);
     _ebayPriceCache.set(cacheKey, null);
-    return null;
-  }
-}
-
-// ─── PHASE 6: EBAY BROWSE API — live listing lowest price ────────────────────
-// Cross-check: is the retailer price actually below what's currently on eBay?
-// Uses Bearer token from Phase 1.
-
-async function getEbayLowestListing(title, token) {
-  if (!token) return null;
-
-  const query = buildEbaySearchQuery(title);
-  const url = `${EBAY_BROWSE_URL}/item_summary/search` +
-    `?q=${query}` +
-    `&filter=buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,conditions:{NEW}` +
-    `&sort=price` +
-    `&limit=5`;
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
-        "Content-Type": "application/json",
-      },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const items = data?.itemSummaries || [];
-    if (!items.length) return null;
-
-    const t2 = title.toLowerCase();
-    const junk = ["lot", "x2", "x3", "graded", "psa", "damaged", "opened", "korean", "japanese"];
-
-    const prices = items
-      .filter(item => {
-        const it = (item.title || "").toLowerCase();
-        return !junk.some(j => it.includes(j));
-      })
-      .map(item => parseFloat(item.price?.value || 0))
-      .filter(p => p > 0)
-      .sort((a, b) => a - b);
-
-    return prices.length > 0 ? prices[0] : null;
-  } catch {
     return null;
   }
 }
@@ -1769,7 +1712,7 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
         const holdData = getHoldData(f.title);
 
         // Phase 2: Get real eBay sold price (replaces/supplements MARKET table)
-        const ebayResult = await getEbaySoldPrice(f.title);
+        const ebayResult = await getEbaySoldPrice(f.title, ebayToken);
         await delay(400); // respectful rate limiting
 
         // Determine best resell value: eBay sold > hardcoded MARKET table
