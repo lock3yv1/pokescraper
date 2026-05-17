@@ -859,53 +859,48 @@ async function sendAlert(deal) {
 
 // ─── RETAILERS ─────────────────────────────────────────────────────────────────
 const retailers = [
+  // ── Confirmed working retailers ────────────────────────────────────────────
   { name:"Total Cards",         base:"https://www.totalcards.net",            type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed-products","/collections/pokemon-sealed-product"] },
-  { name:"Titan Cards",         base:"https://www.titancards.co.uk",          type:"shopify-json",
+    collections:["/products","/collections/pokemon-sealed-products"] },
+  { name:"Titan Cards",         base:"https://titancards.co.uk",              type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
-  { name:"Eterna Cards",        base:"https://www.eternacards.co.uk",         type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
-  { name:"Chaos Cards",         base:"https://www.chaoscards.co.uk",          type:"shopify-json",
-    collections:["/collections/pokemon","/collections/tcg-pokemon"] },
+  { name:"Eterna Cards",        base:"https://eternacards.co.uk",             type:"shopify-json",
+    collections:["/products","/collections/pokemon-tcg-sealed-products","/collections/pokemon"] },
   { name:"Double Sleeved",      base:"https://www.doublesleeved.co.uk",       type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
-  { name:"Toys N Geek",         base:"https://www.toysngeek.co.uk",           type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/trading-cards"] },
   { name:"My TCG",              base:"https://www.mytcg.co.uk",               type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed-product","/collections/pokemon"] },
-  { name:"Gathering Games",     base:"https://www.gatheringgames.co.uk",      type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/all"] },
-  { name:"Leisure Games",       base:"https://www.leisuregames.com",          type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/trading-card-games"] },
-  { name:"Emerald Collectables", base:"https://www.emeraldcollectables.co.uk", type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
   { name:"Zatu Games",          base:"https://www.zatugames.com",             type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed-product","/collections/pokemon"] },
-  { name:"Big Orbit Cards",     base:"https://www.bigorbitsports.co.uk",      type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/sealed-products"] },
+  { name:"Toys N Geek",         base:"https://www.toysngeek.co.uk",           type:"shopify-json",
+    collections:["/products","/collections/pokemon","/collections/trading-cards"] },
+  { name:"Gathering Games",     base:"https://www.gatheringgames.co.uk",      type:"shopify-json",
+    collections:["/products","/collections/pokemon","/collections/all"] },
+  // ── Fixed domains ──────────────────────────────────────────────────────────
+  { name:"Evo Cards",           base:"https://evocards.co.uk",                type:"shopify-json",
+    collections:["/products","/collections/pokemon-sealed-products","/collections/pokemon"] },
+  // ── New retailers found ────────────────────────────────────────────────────
+  { name:"Invicta TCG",         base:"https://invictatcg.co.uk",              type:"shopify-json",
+    collections:["/products","/collections/pokemon","/collections/pokemon-sealed"] },
+  { name:"The Card Vault",      base:"https://thecardvault.co.uk",            type:"shopify-json",
+    collections:["/products","/collections/pokemon-tcg-sealed-products","/collections/pokemon"] },
+  { name:"Pulse Collective",    base:"https://www.pulsecollective.co.uk",     type:"shopify-json",
+    collections:["/products","/collections/pokemon","/collections/all"] },
+  // ── Variable retailers (403/slower but worth trying) ──────────────────────
+  { name:"Chaos Cards",         base:"https://www.chaoscards.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon","/collections/tcg-pokemon"] },
+  { name:"Leisure Games",       base:"https://www.leisuregames.com",          type:"shopify-json",
+    collections:["/products","/collections/pokemon","/collections/trading-card-games"] },
   { name:"Minted TCG",          base:"https://www.mintedtcg.co.uk",           type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
-  { name:"Evo Cards",           base:"https://www.evo.cards",                 type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed-products","/collections/pokemon"] },
-  { name:"Buy Any Cards",       base:"https://www.buyanycards.com",           type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/sealed"] },
-  { name:"TCG Shop UK",         base:"https://www.tcgshopuk.co.uk",           type:"shopify-json",
-    collections:["/products","/collections/pokemon"] },
   { name:"Goblin Gaming",       base:"https://www.goblingaming.co.uk",        type:"shopify-json",
     collections:["/products","/collections/pokemon"] },
   { name:"Magic Madhouse",      base:"https://www.magicmadhouse.co.uk",       type:"shopify-json",
     collections:["/products","/collections/pokemon","/collections/all"] },
-  { name:"Ace Comics",          base:"https://www.acecomics.co.uk",           type:"shopify-json",
-    collections:["/products","/collections/pokemon"] },
-  { name:"Dice & Cards",        base:"https://www.diceandcards.co.uk",        type:"shopify-json",
-    collections:["/products","/collections/pokemon"] },
-  { name:"Mana Gaming",         base:"https://www.managingtcg.co.uk",         type:"shopify-json",
-    collections:["/products","/collections/pokemon"] },
-  { name:"Card Merchant",       base:"https://www.cardmerchant.co.uk",        type:"shopify-json",
-    collections:["/products","/collections/pokemon"] },
   { name:"PACKRAT",             base:"https://packrat.co.uk",                 type:"shopify-json",
     collections:["/products","/collections/all","/collections/pokemon"] },
-  { name:"Amazon UK",           base:"https://www.amazon.co.uk",              type:"skip" },
+  { name:"Emerald Collectables", base:"https://www.emeraldcollectables.co.uk", type:"shopify-json",
+    collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
   { name:"Pokemon Center UK",   base:"https://www.pokemoncenter.com",         type:"shopify-json",
     collections:["/collections/trading-card-game-sealed","/collections/cards"] },
 ];
@@ -915,14 +910,17 @@ async function scrapeRetailer(retailer) {
   if (retailer.type === "skip") return [];
   const found = [];
 
+  let gotProducts = false;
   for (const col of (retailer.collections || [])) {
+    // Once we've found products from one endpoint, stop trying others
+    if (gotProducts) break;
     let page = 1;
     while (true) {
       try {
         const url = `${retailer.base}${col}.json?limit=250&page=${page}`;
         const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; ShinyDen/1.0)", "Accept": "application/json" },
-          timeout: 12000,
+          timeout: 8000,
         });
 
         if (!res.ok) {
@@ -941,6 +939,7 @@ async function scrapeRetailer(retailer) {
         const products = data.products || data.items || [];
         if (!products.length) break;
 
+        gotProducts = true;
         for (const p of products) {
           const title = p.title || p.name || "";
           const variants = p.variants || p.options || [p];
@@ -999,7 +998,7 @@ async function runScan() {
     } catch (e) {
       console.log(`    Error: ${e.message}`);
     }
-    await delay(800);
+    await delay(400);
   }
 
   console.log(`\n📊 ${findings.length} new confirmed deals`);
