@@ -920,7 +920,7 @@ async function scrapeRetailer(retailer) {
         const url = `${retailer.base}${col}.json?limit=250&page=${page}`;
         const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; ShinyDen/1.0)", "Accept": "application/json" },
-          timeout: 8000,
+          timeout: 6000,
         });
 
         if (!res.ok) {
@@ -976,32 +976,49 @@ async function runScan() {
   const seenPrices = new Map(); // retailer::title → last known price
   const findings = [];
 
-  for (const retailer of retailers) {
-    if (retailer.type === "skip") continue;
-    console.log(`  → ${retailer.name}`);
-    try {
-      const items = await scrapeRetailer(retailer);
-      console.log(`    ${items.length} products fetched`);
-
+  // Run retailers in parallel batches of 5 — cuts scan time from 7min to ~90sec
+  const BATCH_SIZE = 5;
+  const activeRetailers = retailers.filter(r => r.type !== "skip");
+  
+  for (let i = 0; i < activeRetailers.length; i += BATCH_SIZE) {
+    const batch = activeRetailers.slice(i, i + BATCH_SIZE);
+    console.log(`  ── Batch ${Math.floor(i/BATCH_SIZE)+1}: ${batch.map(r=>r.name).join(", ")}`);
+    
+    const results = await Promise.allSettled(
+      batch.map(async retailer => {
+        try {
+          const items = await scrapeRetailer(retailer);
+          console.log(`    ✓ ${retailer.name}: ${items.length} products`);
+          return { retailer: retailer.name, items };
+        } catch (e) {
+          console.log(`    ✗ ${retailer.name}: ${e.message}`);
+          return { retailer: retailer.name, items: [] };
+        }
+      })
+    );
+    
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      const { retailer: retailerName, items } = result.value;
+      
       for (const item of items) {
-        const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
+        const key = `${retailerName}::${item.title.toLowerCase().trim()}`;
         const old = seenPrices.get(key);
         const isNew = !old;
         const isPriceDrop = old && item.price < old.price * 0.95;
-
+        
         if (isNew || isPriceDrop) {
           console.log(`    🟢 "${item.title}" £${item.price}`);
-          findings.push({ ...item, isPriceDrop, oldPrice: old?.price || null });
+          findings.push({ ...item, retailer: retailerName, isPriceDrop, oldPrice: old?.price || null });
           seenPrices.set(key, { price: item.price });
         }
       }
-    } catch (e) {
-      console.log(`    Error: ${e.message}`);
     }
-    await delay(400);
+    // Small pause between batches to be respectful
+    if (i + BATCH_SIZE < activeRetailers.length) await delay(200);
   }
 
-  console.log(`\n📊 ${findings.length} new confirmed deals`);
+    console.log(`\n📊 ${findings.length} new confirmed deals`);
 
   // Alert on genuinely good deals
   const alertWorthy = findings.filter(f => {
