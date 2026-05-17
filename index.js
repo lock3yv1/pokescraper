@@ -93,14 +93,29 @@ const BLOCK = [
   "online code","tcg online","tcg live","pokemon live","code card",
   "digital code","online card","tcg code","digital only","code only",
   "unused code","redeem","redemption code","promo code",
-  // Language
-  "japanese","korean","chinese","german","french","italian","spanish",
-  "Portuguese","dutch","polish","russian",
-  "[jp]","japanese version","japanese ed",
-  "proxy","custom","fake","replica","unofficial","fanmade","fan made",
+  // Fake/unofficial only — language not blocked (non-English OK if good deal)
+  "[jp]","[kr]","[cn]",
+  "proxy","custom card","fake card","replica","unofficial","fanmade","fan made",
+  // Japanese set codes that sneak through
+  "sv1m","sv2m","sv3m","sv4m","sv5m","sv6m","sv7m","sv8m",
+  "sv1a","sv2a","sv3a","sv4a","sv5a",
+  "sv1s","sv2s","sv3s","sv4s","sv5s","sv6s","sv7s","sv8s",
+  "cyber judge","future flash","wild force","clay burst","snow hazard",
+  "violet ex","scarlet ex","triplet beat","ruler of the black flame",
+  "raging surf","ex start deck","pokemon card 151","mask of change",
+  "night wanderer","stellar miracle","paradise dragona","super electric breaker",
+  "ancient roar","future flash","lost abyss"," s5 "," s6 "," s7 "," s8 "," s9 ",
+  // Non-sealed / accessories
   "energy card","trainer card","supporter card","item card","tool card",
   "lot","bundle of cards","card lot",
   "mystery bundle cards","panini","topps","bandai cards",
+  // Non-product items
+  "empty box","empty tin","display only","box only","no cards",
+  "graded slab","psa ","psa1","psa2","psa3","psa4","psa5","psa6","psa7","psa8","psa9","psa10",
+  "bgs ","cgc ","jumbo coin","coin only","puzzle","lunch box",
+  "plush","figure","figurine","sleeves","deckbox","deck box",
+  "binder","playmat","pin badge","pin collection",
+  // Condition indicators (individual cards being sold)
   "near mint","lightly played","moderately played","heavily played",
   "light play","near-mint","nm/m"," nm "," lp "," mp "," hp ",
   "1st edition","shadowless","unlimited edition",
@@ -309,6 +324,7 @@ function getHoldData(title) {
 function getPtype(title) {
   const t = title.toLowerCase();
   if (t.includes("ultra premium") || t.includes("upc")) return "Ultra Premium";
+  if (t.includes("super premium")) return "Super Premium";
   if (t.includes("half booster") || t.includes("half box")) return "Half Box";
   if (t.includes("booster box")) return "Booster Box";
   if (t.includes("elite trainer") || t.includes("etb")) return "ETB";
@@ -316,9 +332,11 @@ function getPtype(title) {
   if (t.includes("premium collection")) return "Premium Collection";
   if (t.includes("collection box") || t.includes("special collection")) return "Collection Box";
   if (t.includes("booster pack") || t.includes("single booster")) return "Booster Pack";
-  if (t.includes("mini tin")) return "Mini Tin";
-  if (t.includes("tin")) return "Tin";
   if (t.includes("blister")) return "Blister";
+  if (t.includes("mini tin")) return "Mini Tin";
+  if (t.includes("display case")) return "Display Case";
+  // Word boundary prevents "Victini", "Argentina" etc matching as Tin
+  if (/\btin\b/.test(t)) return "Tin";
   if (t.includes("league battle deck") || t.includes("battle deck")) return "Battle Deck";
   if (t.includes("starter deck")) return "Starter Deck";
   return null;
@@ -340,8 +358,9 @@ function isValidProduct(title, price) {
   const t = title.toLowerCase();
   const blocked = BLOCK.find(k => t.includes(k));
   if (blocked) return false;
-  // Block individual cards (card number pattern like 053/198)
+  // Block individual cards (053/198, 271/SV-P, SWSH001 promo codes)
   if (/\b\d{1,3}\/\d{2,3}\b/.test(t)) return false;
+  if (/\b\d{1,3}\/[a-z]{1,6}[-]?[a-z0-9]*\b/i.test(t)) return false;
   // Must be Pokemon
   if (!t.includes("pokemon") && !t.includes("pokémon") && !t.includes("pok")) return false;
   // Must have a valid set
@@ -491,12 +510,15 @@ async function getEbaySoldPrice(title, token) {
       return null;
     }
 
-    const junk = ["lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 "," 2x"," 3x"," 4x"," 5x",
-                  " 2 pack"," 3 pack"," 4 pack"," 5 pack","sealed (2)","sealed(2)","case of",
-                  "rip seal","graded","psa","bgs","damaged","opened",
-                  "korean","japanese","[jp]","display case","acrylic",
-                  "near mint","lightly played","1st edition","reverse holo",
-                  "holo card","full art","alt art","mystery","twin pack","double pack"];
+    const junk = [
+    "lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 "," 2x"," 3x"," 4x"," 5x",
+    " 2 pack"," 3 pack"," 4 pack"," 5 pack","sealed (2)","sealed(2)","case of",
+    "rip seal","ripped","resealed","graded","psa","bgs","cgc","damaged","opened",
+    "[jp]","[kr]","[cn]","display case","acrylic",
+    "near mint","lightly played","1st edition","reverse holo",
+    "holo card","full art","alt art","mystery","twin pack","double pack",
+    "empty box","box only","no cards",
+  ];
 
     // Set name cross-validation (only for names > 5 chars)
     const setNames = Object.keys(HOLD_DATA);
@@ -617,7 +639,7 @@ async function getEbaySoldPrice_Finding(title) {
     const isPack = titleLower.includes("booster pack") && !titleLower.includes("booster box");
     
     const junk = ["lot "," lot","x2","x3","x4","x5","sealed (2)","case of",
-                  "graded","psa","bgs","korean","japanese","[jp]","damaged","opened"];
+                  "graded","psa","bgs","cgc","[jp]","[kr]","damaged","opened","resealed","ripped"];
 
     const prices = items
       .filter(item => {
@@ -726,26 +748,45 @@ function gradeFromScore(score, hasHoldData) {
 // Writes to ebay_deals.json — completely separate from deals.json
 
 const EBAY_SEARCH_TARGETS = [
-  { q:"pokemon evolving skies booster box sealed",               type:"Booster Box",    marketMin:190, marketMax:260 },
-  { q:"pokemon evolving skies elite trainer box sealed",         type:"ETB",            marketMin:100, marketMax:190 },
-  { q:"pokemon hidden fates booster box sealed",                 type:"Booster Box",    marketMin:200, marketMax:320 },
-  { q:"pokemon shining fates elite trainer box sealed",          type:"ETB",            marketMin:80,  marketMax:150 },
-  { q:"pokemon prismatic evolutions elite trainer box sealed",   type:"ETB",            marketMin:60,  marketMax:110 },
-  { q:"pokemon brilliant stars elite trainer box sealed",        type:"ETB",            marketMin:120, marketMax:175 },
-  { q:"pokemon chilling reign booster box sealed",               type:"Booster Box",    marketMin:220, marketMax:290 },
-  { q:"pokemon chilling reign elite trainer box sealed",         type:"ETB",            marketMin:100, marketMax:140 },
-  { q:"pokemon silver tempest elite trainer box sealed",         type:"ETB",            marketMin:90,  marketMax:130 },
-  { q:"pokemon surging sparks booster box sealed",               type:"Booster Box",    marketMin:200, marketMax:310 },
-  { q:"pokemon surging sparks elite trainer box sealed",         type:"ETB",            marketMin:55,  marketMax:90  },
-  { q:"pokemon 151 booster bundle sealed",                       type:"Booster Bundle", marketMin:40,  marketMax:85  },
-  { q:"pokemon 151 elite trainer box sealed",                    type:"ETB",            marketMin:55,  marketMax:90  },
-  { q:"pokemon destined rivals booster box sealed",              type:"Booster Box",    marketMin:110, marketMax:155 },
-  { q:"pokemon champions path elite trainer box sealed",         type:"ETB",            marketMin:200, marketMax:380 },
-  { q:"pokemon crown zenith elite trainer box sealed",           type:"ETB",            marketMin:95,  marketMax:135 },
-  { q:"pokemon cosmic eclipse booster box sealed",               type:"Booster Box",    marketMin:250, marketMax:480 },
-  { q:"pokemon celebrations elite trainer box sealed",           type:"ETB",            marketMin:60,  marketMax:130 },
-  { q:"pokemon battle styles booster box sealed",                type:"Booster Box",    marketMin:250, marketMax:320 },
-  { q:"pokemon fusion strike booster box sealed",                type:"Booster Box",    marketMin:190, marketMax:240 },
+  // ── HIGH-VALUE SEALED ── sourced from actual eBay UK sold May 2026
+  { q:"pokemon evolving skies booster box sealed english",        type:"Booster Box",    marketMin:170, marketMax:240 },
+  { q:"pokemon evolving skies elite trainer box sealed english",  type:"ETB",            marketMin:130, marketMax:175 },
+  { q:"pokemon hidden fates elite trainer box sealed english",    type:"ETB",            marketMin:270, marketMax:350 },
+  { q:"pokemon shining fates elite trainer box sealed english",   type:"ETB",            marketMin:90,  marketMax:130 },
+  { q:"pokemon champions path elite trainer box sealed english",  type:"ETB",            marketMin:110, marketMax:160 },
+  { q:"pokemon chilling reign booster box sealed english",        type:"Booster Box",    marketMin:190, marketMax:240 },
+  { q:"pokemon chilling reign elite trainer box sealed english",  type:"ETB",            marketMin:130, marketMax:165 },
+  { q:"pokemon brilliant stars booster box sealed english",       type:"Booster Box",    marketMin:140, marketMax:185 },
+  { q:"pokemon brilliant stars elite trainer box sealed english",  type:"ETB",           marketMin:120, marketMax:160 },
+  { q:"pokemon astral radiance elite trainer box sealed english",  type:"ETB",           marketMin:120, marketMax:155 },
+  { q:"pokemon lost origin elite trainer box sealed english",     type:"ETB",            marketMin:175, marketMax:230 },
+  { q:"pokemon silver tempest booster box sealed english",        type:"Booster Box",    marketMin:120, marketMax:160 },
+  { q:"pokemon silver tempest elite trainer box sealed english",  type:"ETB",            marketMin:100, marketMax:140 },
+  { q:"pokemon crown zenith elite trainer box sealed english",    type:"ETB",            marketMin:240, marketMax:300 },
+  { q:"pokemon surging sparks booster box sealed english",        type:"Booster Box",    marketMin:200, marketMax:280 },
+  { q:"pokemon surging sparks elite trainer box sealed english",  type:"ETB",            marketMin:110, marketMax:155 },
+  { q:"pokemon prismatic evolutions elite trainer box sealed english", type:"ETB",       marketMin:135, marketMax:185 },
+  { q:"pokemon 151 elite trainer box sealed english",             type:"ETB",            marketMin:95,  marketMax:135 },
+  { q:"pokemon 151 booster bundle sealed english",                type:"Booster Bundle", marketMin:55,  marketMax:80  },
+  { q:"pokemon paradox rift booster box sealed english",          type:"Booster Box",    marketMin:120, marketMax:165 },
+  { q:"pokemon paradox rift elite trainer box sealed english",    type:"ETB",            marketMin:115, marketMax:155 },
+  { q:"pokemon temporal forces booster box sealed english",       type:"Booster Box",    marketMin:80,  marketMax:120 },
+  { q:"pokemon temporal forces elite trainer box sealed english", type:"ETB",            marketMin:85,  marketMax:120 },
+  { q:"pokemon twilight masquerade booster box sealed english",   type:"Booster Box",    marketMin:80,  marketMax:120 },
+  { q:"pokemon twilight masquerade elite trainer box sealed english", type:"ETB",        marketMin:100, marketMax:140 },
+  { q:"pokemon stellar crown booster box sealed english",         type:"Booster Box",    marketMin:100, marketMax:145 },
+  { q:"pokemon stellar crown elite trainer box sealed english",   type:"ETB",            marketMin:90,  marketMax:130 },
+  { q:"pokemon shrouded fable elite trainer box sealed english",  type:"ETB",            marketMin:90,  marketMax:130 },
+  { q:"pokemon destined rivals booster box sealed english",       type:"Booster Box",    marketMin:140, marketMax:200 },
+  { q:"pokemon destined rivals elite trainer box sealed english", type:"ETB",            marketMin:140, marketMax:185 },
+  { q:"pokemon journey together booster box sealed english",      type:"Booster Box",    marketMin:140, marketMax:200 },
+  { q:"pokemon journey together elite trainer box sealed english", type:"ETB",           marketMin:105, marketMax:145 },
+  { q:"pokemon fusion strike booster box sealed english",         type:"Booster Box",    marketMin:65,  marketMax:100 },
+  { q:"pokemon darkness ablaze booster box sealed english",       type:"Booster Box",    marketMin:140, marketMax:185 },
+  { q:"pokemon paldean fates elite trainer box sealed english",   type:"ETB",            marketMin:45,  marketMax:75  },
+  { q:"pokemon obsidian flames booster box sealed english",       type:"Booster Box",    marketMin:190, marketMax:255 },
+  { q:"pokemon cosmic eclipse booster box sealed english",        type:"Booster Box",    marketMin:220, marketMax:350 },
+  { q:"pokemon rebel clash booster box sealed english",           type:"Booster Box",    marketMin:185, marketMax:260 },
 ];
 
 const EBAY_MIN_DISCOUNT_PCT = 8;
@@ -754,9 +795,15 @@ async function scanEbayForDeals(token) {
   if (!token) { console.log("  ⚠️ No eBay token — skipping eBay deal scan"); return []; }
   console.log("\n🛒 Scanning eBay UK for live deals...");
   const deals = [];
-  const junk = ["lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 ","sealed (2)","sealed(2)",
-                "case of","rip seal","damaged","opened","korean","japanese","[jp]",
-                "bundle of","graded","psa","bgs","twin pack","double pack"];
+  const junk = [
+    "lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 ",
+    "sealed (2)","sealed(2)","case of",
+    "rip ","ripped","damaged","opened","resealed",
+    "[jp]","[kr]","[cn]",
+    "bundle of","graded","psa ","bgs ","cgc ",
+    "twin pack","double pack","mystery","random ",
+    "empty","display box","box only",
+  ];
 
   for (const target of EBAY_SEARCH_TARGETS) {
     try {
@@ -1064,6 +1111,21 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
     const found = await runScan();
 
     if (found && found.length > 0) {
+      // ── eBay live deals scan runs FIRST before enrichment ──
+      // Enrichment makes 800+ eBay API calls causing rate limits (429).
+      // Running scan first guarantees it gets fresh token quota.
+      const ebayDeals = await scanEbayForDeals(ebayToken);
+      if (ebayDeals.length > 0) {
+        await saveToGitHub("ebay_deals.json", {
+          deals: ebayDeals,
+          updatedAt: new Date().toISOString(),
+          count: ebayDeals.length,
+        });
+        console.log(`✅ Saved ebay_deals.json`);
+      } else {
+        console.log("  ℹ️ No eBay deals found this scan");
+      }
+
       console.log("\n📡 Enriching deals with eBay market data...");
 
       // Deduplicate by product title before eBay enrichment
@@ -1117,18 +1179,6 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
         holdData: HOLD_DATA,
         updatedAt: new Date().toISOString(),
       });
-
-      // Scan eBay for live deal listings (separate tab)
-      const ebayDeals = await scanEbayForDeals(ebayToken);
-      if (ebayDeals.length > 0) {
-        await saveToGitHub("ebay_deals.json", {
-          deals: ebayDeals,
-          updatedAt: new Date().toISOString(),
-          count: ebayDeals.length,
-        });
-      } else {
-        console.log("  ℹ️ No eBay deals found this scan");
-      }
     }
   } catch (e) {
     console.error("Fatal:", e.message);
