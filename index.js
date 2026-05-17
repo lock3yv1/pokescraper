@@ -908,7 +908,6 @@ const retailers = [
   { name:"Amazon UK",           base:"https://www.amazon.co.uk",              type:"skip" },
   { name:"Pokemon Center UK",   base:"https://www.pokemoncenter.com",         type:"shopify-json",
     collections:["/collections/trading-card-game-sealed","/collections/cards"] },
-]
 ];
 
 // ─── SCRAPE A SINGLE RETAILER ──────────────────────────────────────────────────
