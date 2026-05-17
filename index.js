@@ -1,38 +1,360 @@
-const cheerio = require("cheerio");
+#!/usr/bin/env node
+// ShinyDen PokéScraper — GitHub Actions
+// Scrapes UK retailers + enriches with eBay Browse API market prices
+// Writes deals.json + ebay_deals.json to lock3ys-den repo
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const https = require("https");
+const http  = require("http");
 
-// ─── EBAY API CREDENTIALS (server-side only — never in frontend) ───────────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const EF = 0.129;  // eBay final value fee 12.9%
+const FEE_FIXED = 0.30; // eBay 30p fixed per transaction
+const POST = 4;      // avg postage £4
+
+const GH_TOKEN   = process.env.GH_TOKEN;
+const GH_REPO    = "lock3yv1/lock3ys-den";
+const TELE_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELE_CHAT  = process.env.TELEGRAM_CHAT_ID;
+
 const EBAY_CLIENT_ID     = process.env.EBAY_CLIENT_ID;
 const EBAY_CLIENT_SECRET = process.env.EBAY_CLIENT_SECRET;
-const EBAY_SANDBOX       = process.env.EBAY_SANDBOX === "true"; // set false for production
+const EBAY_SANDBOX       = process.env.EBAY_SANDBOX === "true";
 
-// eBay endpoint roots
-const EBAY_AUTH_URL    = EBAY_SANDBOX
+const EBAY_AUTH_URL   = EBAY_SANDBOX
   ? "https://api.sandbox.ebay.com/identity/v1/oauth2/token"
   : "https://api.ebay.com/identity/v1/oauth2/token";
-const EBAY_FINDING_URL = EBAY_SANDBOX
-  ? "https://svcs.sandbox.ebay.com/services/search/FindingService/v1"
-  : "https://svcs.ebay.com/services/search/FindingService/v1";
-const EBAY_BROWSE_URL  = EBAY_SANDBOX
+const EBAY_BROWSE_URL = EBAY_SANDBOX
   ? "https://api.sandbox.ebay.com/buy/browse/v1"
   : "https://api.ebay.com/buy/browse/v1";
 
-// ─── PHASE 1: OAUTH TOKEN ─────────────────────────────────────────────────────
-// Tokens expire in 7,200s (2 hrs). Cache in memory for the scan run.
-let _ebayToken = null;
-let _ebayTokenExpiry = 0;
+// ─── FETCH HELPER ─────────────────────────────────────────────────────────────
+function fetchUrl(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith("https") ? https : http;
+    const req = lib.request(url, {
+      method: options.method || "GET",
+      headers: options.headers || {},
+      timeout: options.timeout || 15000,
+    }, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => resolve({ ok: res.statusCode < 400, status: res.statusCode, text: () => data, json: () => JSON.parse(data) }));
+    });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+const fetch = fetchUrl;
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// ─── ENGLISH SETS ──────────────────────────────────────────────────────────────
+const ENGLISH_SETS = [
+  // Mega Evolution era (2025-2026)
+  "ascended heroes","destined rivals","perfect order","chaos rising",
+  "phantasmal flames","mega evolution","mega lucario","nihil zero",
+  "black bolt","white flare","first partner",
+  // Scarlet & Violet
+  "journey together","prismatic evolutions","surging sparks","stellar crown",
+  "shrouded fable","twilight masquerade","temporal forces","paradox rift",
+  "obsidian flames","paldea evolved","paldean fates",
+  "scarlet & violet","scarlet and violet","scarlet violet",
+  "151","sv1","sv2","sv3","sv4","sv5","sv6","sv7","sv8","sv9",
+  // Sword & Shield
+  "crown zenith","silver tempest","lost origin","astral radiance",
+  "brilliant stars","fusion strike","evolving skies","chilling reign",
+  "battle styles","shining fates","vivid voltage","champions path",
+  "darkness ablaze","rebel clash","sword & shield","sword and shield","swsh",
+  // Sun & Moon
+  "hidden fates","cosmic eclipse","unified minds","unbroken bonds",
+  "team up","lost thunder","celestial storm","forbidden light",
+  "ultra prism","burning shadows","guardians rising","sun & moon",
+  "sun and moon","shining legends","dragon majesty",
+  // XY era
+  "evolutions","steam siege","fates collide","breakpoint","breakthrough",
+  "ancient origins","roaring skies","primal clash","phantom forces",
+  "flashfire","xy base","xy",
+  // Classic
+  "base set","jungle","fossil","team rocket","gym heroes","gym challenge",
+  "neo genesis","neo discovery","neo revelation","neo destiny",
+  "legendary collection","expedition","aquapolis","skyridge",
+  "ex ruby sapphire","ex sandstorm","ex dragon","ex team magma",
+  "ex firered leafgreen","ex deoxys","ex emerald","ex unseen forces",
+  "ex delta species","ex legend maker","ex holon phantoms","ex crystal guardians",
+  "ex dragon frontiers","ex power keepers",
+  "pokemon go","celebrations","crown zenith","battle academy",
+];
+
+// ─── BLOCKED TERMS ─────────────────────────────────────────────────────────────
+const BLOCK = [
+  "japanese","korean","chinese","german","french","italian","spanish",
+  "Portuguese","dutch","polish","russian",
+  "[jp]","japanese version","japanese ed",
+  "proxy","custom","fake","replica","unofficial","fanmade","fan made",
+  "energy card","trainer card","supporter card","item card","tool card",
+  "lot","bundle of cards","card lot",
+  "mystery bundle cards","panini","topps","bandai cards",
+  "near mint","lightly played","moderately played","heavily played",
+  "light play","near-mint","nm/m"," nm "," lp "," mp "," hp ",
+  "1st edition","shadowless","unlimited edition",
+  "reverse holo","holo rare","full art","alt art","special art",
+  "common near","uncommon near","rare near","uncommon reverse",
+  "0% vat gvms","20% vat","gvms","slightly damaged",
+  "vinyl figure","plush","funko","statue","figure",
+  "sleeves","deck box","playmat","binder","portfolio",
+  "lorcana","magic the gathering","mtg","yugioh","yu-gi-oh","digimon",
+  "dragon ball","one piece","flesh and blood","force of will",
+  "obsidia-tcg","obsidia tcg",
+];
+
+// ─── MARKET TABLE (May 2026 eBay UK prices) ────────────────────────────────────
+const MARKET = {
+  // Mega Evolution (2025-2026)
+  "ascended heroes booster box":           125,
+  "ascended heroes elite trainer box":     160,
+  "ascended heroes etb":                   160,
+  "phantasmal flames booster box":         360,
+  "phantasmal flames elite trainer box":   120,
+  "phantasmal flames etb":                 120,
+  "perfect order booster pack":             8,
+  "perfect order booster box":            130,
+  "destined rivals booster box":           125,
+  "destined rivals elite trainer box":      58,
+  "destined rivals etb":                    58,
+  "destined rivals booster bundle":         32,
+  "destined rivals booster pack":            7,
+  // Scarlet & Violet
+  "surging sparks booster box":            250,
+  "surging sparks elite trainer box":       65,
+  "surging sparks etb":                     65,
+  "surging sparks booster bundle":          28,
+  "surging sparks booster pack":             8,
+  "stellar crown booster box":             150,
+  "stellar crown elite trainer box":        48,
+  "twilight masquerade booster box":       160,
+  "twilight masquerade elite trainer box":  48,
+  "temporal forces booster box":           155,
+  "temporal forces elite trainer box":      48,
+  "paradox rift booster box":              170,
+  "paradox rift elite trainer box":         50,
+  "obsidian flames booster box":           180,
+  "obsidian flames elite trainer box":      52,
+  "paldea evolved booster box":            145,
+  "paldea evolved elite trainer box":       46,
+  "paldean fates elite trainer box":        80,
+  "scarlet & violet booster box":          140,
+  "scarlet & violet elite trainer box":     44,
+  "scarlet violet elite trainer box":       44,
+  "151 booster box":                       210,
+  "151 elite trainer box":                  68,
+  "151 booster bundle":                     50,
+  "journey together booster box":          130,
+  "journey together elite trainer box":     52,
+  "journey together booster pack":           7,
+  // Sword & Shield
+  "crown zenith booster box":              320,
+  "crown zenith elite trainer box":        118,
+  "crown zenith etb":                      118,
+  "silver tempest booster box":            420,
+  "silver tempest elite trainer box":      108,
+  "silver tempest etb":                    108,
+  "silver tempest booster pack":            12,
+  "lost origin booster box":               200,
+  "lost origin elite trainer box":          95,
+  "lost origin etb":                        95,
+  "astral radiance booster box":           195,
+  "astral radiance elite trainer box":     100,
+  "astral radiance etb":                   100,
+  "brilliant stars booster box":           225,
+  "brilliant stars elite trainer box":     148,
+  "brilliant stars etb":                   148,
+  "brilliant stars booster pack":           11,
+  "fusion strike booster box":             215,
+  "fusion strike elite trainer box":        95,
+  "fusion strike etb":                      95,
+  "evolving skies booster box":            220,
+  "evolving skies elite trainer box":      155,
+  "evolving skies etb":                    155,
+  "evolving skies booster pack":            14,
+  "chilling reign booster box":            245,
+  "chilling reign elite trainer box":      115,
+  "chilling reign etb":                    115,
+  "chilling reign booster pack":            13,
+  "battle styles booster box":             285,
+  "battle styles elite trainer box":       132,
+  "battle styles etb":                     132,
+  "battle styles booster pack":             10,
+  "shining fates elite trainer box":       120,
+  "shining fates etb":                     120,
+  "shining fates booster pack":             15,
+  "vivid voltage booster box":             195,
+  "vivid voltage elite trainer box":        68,
+  "vivid voltage booster pack":             11,
+  "champions path elite trainer box":      280,
+  "champions path etb":                    280,
+  "champions path booster pack":            25,
+  "darkness ablaze booster box":           175,
+  "darkness ablaze elite trainer box":      68,
+  "darkness ablaze etb":                    68,
+  "darkness ablaze booster pack":           10,
+  "rebel clash booster box":               170,
+  "rebel clash elite trainer box":          60,
+  "rebel clash booster pack":               11,
+  "sword & shield booster box":            165,
+  "sword & shield elite trainer box":       55,
+  "sword & shield booster pack":            12,
+  // Sun & Moon
+  "hidden fates booster box":              350,
+  "hidden fates elite trainer box":        180,
+  "hidden fates etb":                      180,
+  "cosmic eclipse booster box":            280,
+  "cosmic eclipse elite trainer box":       85,
+  "unified minds booster box":             180,
+  "unbroken bonds booster box":            195,
+  "team up booster box":                   165,
+  // Older
+  "celebrations elite trainer box":         90,
+  "pokemon go elite trainer box":           65,
+  "pokemon go booster bundle":              35,
+};
+
+function getMarket(title) {
+  const t = title.toLowerCase();
+  for (const [k, v] of Object.entries(MARKET)) {
+    if (t.includes(k)) return v;
+  }
+  return null;
+}
+
+// ─── RRP TABLE ─────────────────────────────────────────────────────────────────
+const RRP = {
+  "elite trainer box": 49.99, "etb": 49.99,
+  "booster box": 134.99, "half booster box": 69.99,
+  "booster bundle": 34.99,
+  "booster pack": 4.99,
+  "tin": 24.99, "mini tin": 14.99,
+  "collection box": 39.99, "premium collection": 39.99,
+  "ultra premium collection": 119.99, "upc": 119.99,
+  "league battle deck": 34.99, "battle deck": 19.99,
+};
+
+function getRRP(title) {
+  const t = title.toLowerCase();
+  if (t.includes("ultra premium") || t.includes("upc")) return RRP["ultra premium collection"];
+  if (t.includes("half booster") || t.includes("half box")) return RRP["half booster box"];
+  if (t.includes("booster box")) return RRP["booster box"];
+  if (t.includes("elite trainer") || t.includes("etb")) return RRP["elite trainer box"];
+  if (t.includes("booster bundle")) return RRP["booster bundle"];
+  if (t.includes("booster pack")) return RRP["booster pack"];
+  if (t.includes("mini tin")) return RRP["mini tin"];
+  if (t.includes("tin")) return RRP["tin"];
+  if (t.includes("premium collection")) return RRP["premium collection"];
+  if (t.includes("collection")) return RRP["collection box"];
+  if (t.includes("league battle deck")) return RRP["league battle deck"];
+  if (t.includes("battle deck")) return RRP["battle deck"];
+  return null;
+}
+
+// ─── HOLD DATA (CRITICAL: must use score/yr1/yr2/yr3/yr4 fields) ───────────────
+// These feed calcHold() in the frontend which expects these exact field names
+const HOLD_DATA = {
+  "evolving skies":       { score:10, trend:"rising",   yr1:1.05, yr2:1.15, yr3:1.35, yr4:1.55, note:"Umbreon VMAX Alt Art (raw ~£300-400+, PSA 10 ~£600+). Generational set — rarer every year." },
+  "hidden fates":         { score:9,  trend:"rising",   yr1:1.05, yr2:1.12, yr3:1.25, yr4:1.40, note:"Shiny Charizard GX (raw ~£100-150+, PSA 10 ~£400+). Tiny print run, never reprinted." },
+  "prismatic evolutions": { score:9,  trend:"rising",   yr1:1.04, yr2:1.12, yr3:1.28, yr4:1.45, note:"Umbreon ex SIR (raw ~£150-200+, PSA 10 ~£400+). Eevee demand permanent — next Evolving Skies." },
+  "shining fates":        { score:8,  trend:"rising",   yr1:1.03, yr2:1.10, yr3:1.20, yr4:1.35, note:"Shiny Charizard VMAX (raw ~£80-120+, PSA 10 ~£300+). Mini Shiny Vault. Print run ended." },
+  "champions path":       { score:9,  trend:"rising",   yr1:1.06, yr2:1.15, yr3:1.30, yr4:1.50, note:"Shiny Charizard V (raw ~£60-80+, PSA 10 ~£200+). Tiny print run, supply near exhausted." },
+  "brilliant stars":      { score:5,  trend:"stable",   yr1:1.01, yr2:1.03, yr3:1.07, yr4:1.12, note:"Charizard VSTAR (raw ~£40-80, PSA 10 ~£150+). Consistent collector and competitive demand." },
+  "chilling reign":       { score:7,  trend:"rising",   yr1:1.04, yr2:1.10, yr3:1.20, yr4:1.35, note:"Shadow Rider Calyrex VMAX (raw ~£40-60+), Ice Rider Alt Art (raw ~£60-80+). Undervalued." },
+  "battle styles":        { score:5,  trend:"stable",   yr1:1.01, yr2:1.03, yr3:1.07, yr4:1.11, note:"Urshifu V SWSH-Black Star (raw ~£8-20, PSA 10 ~£60+). Solid competitive and collector floor." },
+  "fusion strike":        { score:4,  trend:"stable",   yr1:1.01, yr2:1.02, yr3:1.05, yr4:1.08, note:"Gengar VMAX Alt Art (raw ~£60-80+, PSA 10 ~£150+). Large print run limits ceiling." },
+  "astral radiance":      { score:5,  trend:"stable",   yr1:1.02, yr2:1.04, yr3:1.08, yr4:1.12, note:"Origin Forme Palkia VSTAR (raw ~£25-50). Steady appreciation expected." },
+  "lost origin":          { score:6,  trend:"rising",   yr1:1.03, yr2:1.08, yr3:1.15, yr4:1.25, note:"Giratina VSTAR (raw ~£40-80, PSA 10 ~£120+). Increasingly popular collector target." },
+  "silver tempest":       { score:5,  trend:"stable",   yr1:1.02, yr2:1.04, yr3:1.08, yr4:1.14, note:"Regidrago VSTAR (raw ~£25-50). Modest but steady appreciation." },
+  "crown zenith":         { score:6,  trend:"rising",   yr1:1.03, yr2:1.08, yr3:1.16, yr4:1.28, note:"Galarian Gallery exclusives (raw ~£15-80 each). Strong collector appeal." },
+  "surging sparks":       { score:8,  trend:"rising",   yr1:1.08, yr2:1.20, yr3:1.40, yr4:1.65, note:"Pikachu ex SIR (raw ~£200-250+, PSA 10 ~£500+). Box prices up 150%+ in 18 months." },
+  "151":                  { score:7,  trend:"rising",   yr1:1.05, yr2:1.12, yr3:1.25, yr4:1.40, note:"Charizard ex SIR (raw ~£80-100+), Mew ex SIR (raw ~£40-60+). Permanent nostalgia demand." },
+  "destined rivals":      { score:5,  trend:"stable",   yr1:1.04, yr2:1.10, yr3:1.18, yr4:1.28, note:"New set — chase cards TBC. Early buy window. Buy sealed and watch." },
+  "temporal forces":      { score:5,  trend:"stable",   yr1:1.02, yr2:1.05, yr3:1.10, yr4:1.15, note:"Walking Wake ex, Iron Leaves ex. Moderate collector interest." },
+  "paradox rift":         { score:5,  trend:"stable",   yr1:1.02, yr2:1.05, yr3:1.10, yr4:1.15, note:"Roaring Moon ex, Iron Valiant ex. Steady demand." },
+  "paldean fates":        { score:6,  trend:"rising",   yr1:1.04, yr2:1.10, yr3:1.20, yr4:1.32, note:"Shiny Vault mini-set. Shiny Charizard ex (raw ~£60-80+). Limited supply." },
+  "obsidian flames":      { score:5,  trend:"stable",   yr1:1.02, yr2:1.05, yr3:1.09, yr4:1.14, note:"Charizard ex SIR Tera (raw ~£50-100+). Popular Charizard variant." },
+  "stellar crown":        { score:4,  trend:"stable",   yr1:1.01, yr2:1.03, yr3:1.06, yr4:1.10, note:"Terapagos ex SIR (raw ~£30-40+). Modest appreciation expected." },
+  "journey together":     { score:4,  trend:"stable",   yr1:1.02, yr2:1.05, yr3:1.08, yr4:1.12, note:"New 2025 set. Chase cards developing — watch for key pulls." },
+  "cosmic eclipse":       { score:7,  trend:"rising",   yr1:1.04, yr2:1.10, yr3:1.22, yr4:1.38, note:"Arceus & Dialga TAG TEAM GX (raw ~£40-60+). Last Sun & Moon premium." },
+  "vivid voltage":        { score:5,  trend:"stable",   yr1:1.01, yr2:1.03, yr3:1.06, yr4:1.10, note:"Amazing Rares (raw ~£10-30 each). Moderate collector appeal." },
+  "darkness ablaze":      { score:4,  trend:"stable",   yr1:1.01, yr2:1.02, yr3:1.05, yr4:1.08, note:"Charizard VMAX (raw ~£30-50, PSA 10 ~£100+). Fan favourite consistent floor." },
+  "rebel clash":          { score:4,  trend:"stable",   yr1:1.01, yr2:1.02, yr3:1.05, yr4:1.08, note:"Inteleon VMAX (raw ~£10-20). Modest set with limited collector ceiling." },
+  "ascended heroes":      { score:8,  trend:"rising",   yr1:1.08, yr2:1.18, yr3:1.35, yr4:1.55, note:"Mega Evolution set. Mega Charizard ex (sealed UPC ~£150+). Growing demand." },
+  "phantasmal flames":    { score:7,  trend:"rising",   yr1:1.06, yr2:1.14, yr3:1.28, yr4:1.45, note:"Mega Evolution set. Mega Charizard variants drive collector demand." },
+  "perfect order":        { score:6,  trend:"rising",   yr1:1.04, yr2:1.10, yr3:1.20, yr4:1.32, note:"Mega Evolution set. Collector demand growing as series matures." },
+  "hidden fates":         { score:9,  trend:"rising",   yr1:1.05, yr2:1.12, yr3:1.25, yr4:1.40, note:"Shiny Vault. All Shiny Pokemon — Shiny Charizard GX centrepiece." },
+};
+
+function getHoldData(title) {
+  const t = title.toLowerCase();
+  for (const [k, v] of Object.entries(HOLD_DATA)) {
+    if (t.includes(k)) return v;
+  }
+  return null;
+}
+
+// ─── PRODUCT TYPE DETECTION ────────────────────────────────────────────────────
+function getPtype(title) {
+  const t = title.toLowerCase();
+  if (t.includes("ultra premium") || t.includes("upc")) return "Ultra Premium";
+  if (t.includes("half booster") || t.includes("half box")) return "Half Box";
+  if (t.includes("booster box")) return "Booster Box";
+  if (t.includes("elite trainer") || t.includes("etb")) return "ETB";
+  if (t.includes("booster bundle")) return "Booster Bundle";
+  if (t.includes("premium collection")) return "Premium Collection";
+  if (t.includes("collection box") || t.includes("special collection")) return "Collection Box";
+  if (t.includes("booster pack") || t.includes("single booster")) return "Booster Pack";
+  if (t.includes("mini tin")) return "Mini Tin";
+  if (t.includes("tin")) return "Tin";
+  if (t.includes("blister")) return "Blister";
+  if (t.includes("league battle deck") || t.includes("battle deck")) return "Battle Deck";
+  if (t.includes("starter deck")) return "Starter Deck";
+  return null;
+}
+
+// ─── TITLE VALIDATION ──────────────────────────────────────────────────────────
+function normaliseTitle(t) {
+  return t.toLowerCase()
+    .replace(/scarlet\s*[&and]+\s*violet\s*/gi, "")
+    .replace(/sword\s*[&and]+\s*shield\s*/gi, "")
+    .replace(/sun\s*[&and]+\s*moon\s*/gi, "")
+    .replace(/pokémon|pokemon/gi, "")
+    .replace(/tcg\s*/gi, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
+function isValidProduct(title, price) {
+  const t = title.toLowerCase();
+  const blocked = BLOCK.find(k => t.includes(k));
+  if (blocked) return false;
+  // Block individual cards (card number pattern like 053/198)
+  if (/\b\d{1,3}\/\d{2,3}\b/.test(t)) return false;
+  // Must be Pokemon
+  if (!t.includes("pokemon") && !t.includes("pokémon") && !t.includes("pok")) return false;
+  // Must have a valid set
+  const hasSet = ENGLISH_SETS.some(s => t.includes(s));
+  if (!hasSet) return false;
+  // Must be sealed product
+  const ptype = getPtype(title);
+  if (!ptype) return false;
+  // Price sanity
+  if (price <= 0 || price > 3000) return false;
+  return true;
+}
+
+// ─── EBAY API ──────────────────────────────────────────────────────────────────
+let ebayToken = null;
 
 async function getEbayToken() {
-  if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) {
-    console.log("  ⚠️  eBay credentials not set — skipping eBay API calls");
-    return null;
-  }
-  // Return cached token if still valid (with 60s buffer)
-  if (_ebayToken && Date.now() < _ebayTokenExpiry - 60000) {
-    return _ebayToken;
-  }
+  if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) return null;
   try {
     const creds = Buffer.from(`${EBAY_CLIENT_ID}:${EBAY_CLIENT_SECRET}`).toString("base64");
     const res = await fetch(EBAY_AUTH_URL, {
@@ -43,239 +365,154 @@ async function getEbayToken() {
       },
       body: "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope",
     });
-    if (!res.ok) {
-      console.log(`  ❌ eBay token error: HTTP ${res.status}`);
-      return null;
-    }
-    const data = await res.json();
-    _ebayToken = data.access_token;
-    _ebayTokenExpiry = Date.now() + (data.expires_in * 1000);
-    console.log(`  ✅ eBay token acquired (expires in ${Math.round(data.expires_in / 60)}min)`);
-    return _ebayToken;
+    if (!res.ok) { console.log("  ❌ eBay auth failed:", res.status); return null; }
+    const data = res.json();
+    console.log("  ✅ eBay token acquired (expires in 120min)");
+    return data.access_token;
   } catch (e) {
-    console.log(`  ❌ eBay token fetch failed: ${e.message}`);
+    console.log("  ❌ eBay auth error:", e.message);
     return null;
   }
 }
 
-// ─── PHASE 2 + 6: EBAY BROWSE API — market price lookup ─────────────────────
-// The Finding API (completed items) requires special approval not yet active.
-// Browse API is already working (OAuth token confirmed). We use it to:
-//   1. Search live UK GBP listings sorted by price (lowest first)
-//   2. Take a weighted median of the lowest cluster — this approximates fair value
-//   3. This is MORE useful than sold data for our purpose (retailer vs eBay BIN)
-//
-// The Browse API is the modern eBay API and preferred over Finding API anyway.
-
-// In-memory cache: avoid duplicate API calls for same product within a scan
+// ─── EBAY PRICE LOOKUP (Browse API) ───────────────────────────────────────────
 const _ebayPriceCache = new Map();
+const _externalPriceCache = new Map();
 
 function buildEbaySearchQuery(title) {
   let t = title.toLowerCase();
-  // Strip GVMS/VAT retailer suffixes (Evo Cards noise)
-  t = t.replace(/0% vat gvms/g, "").replace(/20% vat/g, "").replace(/gvms/g, "");
-  // Strip acrylic case bundle suffix
-  t = t.replace(/acrylic case bundle/g, "").replace(/acrylic.*$/g, "");
-  // Strip damage notes
-  t = t.replace(/slightly damaged/g, "");
-  // Strip series generation prefixes — keep set name only
-  t = t.replace(/scarlet and violet/g, "").replace(/scarlet & violet/g, "")
-       .replace(/sword and shield/g, "").replace(/sword & shield/g, "")
-       .replace(/sun and moon/g, "").replace(/sun & moon/g, "")
-       .replace(/pokémon/g, "pokemon");
-  // Strip parenthetical content
-  t = t.replace(/[(][^)]*[)]/g, "");
-  // Strip punctuation
-  t = t.replace(/[-|:]/g, " ").replace(/[^a-z0-9 ]/g, " ");
-  // Strip noise words
-  t = t.replace(/ (the|and|of|from|with|for|by|a|an|contains|total|authentic|expansion) /g, " ");
-  t = t.replace(/  +/g, " ").trim();
-  // For single booster packs: add "1x" to disambiguate from multi-pack lots
-  // This significantly reduces contamination from "4x", "x12", "lot" listings
-  const isSinglePack = t.includes("booster pack") && 
-    !t.includes("booster box") && !t.includes("half") &&
-    !t.includes("elite trainer") && !t.includes("bundle");
-
-  const prefix = isSinglePack ? "1x single" : "pokemon";
-  const query = (prefix + " " + t + " sealed")
-    .replace(/^1x single pokemon/, "1x single pokemon")
-    .replace(/^pokemon pokemon/, "pokemon")
-    .replace(/  +/g, " ").trim();
+  t = t.replace(/0% vat gvms/g,"").replace(/20% vat/g,"").replace(/gvms/g,"");
+  t = t.replace(/acrylic case bundle/g,"").replace(/acrylic.*$/g,"");
+  t = t.replace(/slightly damaged/g,"");
+  t = t.replace(/scarlet and violet/g,"").replace(/scarlet & violet/g,"")
+       .replace(/sword and shield/g,"").replace(/sword & shield/g,"")
+       .replace(/sun and moon/g,"").replace(/sun & moon/g,"")
+       .replace(/pokémon/g,"pokemon");
+  t = t.replace(/[(][^)]*[)]/g,"");
+  t = t.replace(/[-|:]/g," ").replace(/[^a-z0-9 ]/g," ");
+  t = t.replace(/ (the|and|of|from|with|for|by|a|an|contains|total|authentic|expansion) /g," ");
+  t = t.replace(/  +/g," ").trim();
+  const query = ("pokemon " + t + " sealed")
+    .replace(/pokemon pokemon/g,"pokemon")
+    .replace(/  +/g," ").trim();
   return query;
 }
 
 async function getEbaySoldPrice(title, token) {
-  // Check cache first
   const cacheKey = title.toLowerCase().trim();
-  if (_ebayPriceCache.has(cacheKey)) {
-    return _ebayPriceCache.get(cacheKey);
-  }
+  if (_ebayPriceCache.has(cacheKey)) return _ebayPriceCache.get(cacheKey);
+  if (!token) { _ebayPriceCache.set(cacheKey, null); return null; }
 
-  // Needs valid Browse API token
-  if (!token) {
-    _ebayPriceCache.set(cacheKey, null);
-    return null;
+  const titleLower = title.toLowerCase();
+  // Detect product type for price bounds
+  const isEtb    = titleLower.includes("elite trainer") || titleLower.includes("etb");
+  const isBox    = titleLower.includes("booster box") && !titleLower.includes("half");
+  const isHalf   = titleLower.includes("half booster") || titleLower.includes("half box");
+  const isBundle = titleLower.includes("booster bundle");
+  const isPack   = titleLower.includes("booster pack") && !isBox && !isEtb && !isBundle && !isHalf;
+  const isTin    = titleLower.includes(" tin") && !isBox && !isEtb;
+
+  // Price bounds prevent multi-pack lots and outliers
+  let priceMin, priceMax;
+  if (titleLower.includes("ultra premium") || titleLower.includes("upc")) { priceMin=80; priceMax=450; }
+  else if (isBox)    { priceMin=50;  priceMax=800; }
+  else if (isHalf)   { priceMin=30;  priceMax=400; }
+  else if (isEtb)    { priceMin=25;  priceMax=280; }
+  else if (isBundle) { priceMin=12;  priceMax=120; }
+  else if (isPack)   { priceMin=3;   priceMax=18; }
+  else if (isTin)    { priceMin=10;  priceMax=80; }
+  else               { priceMin=5;   priceMax=600; }
+
+  // For packs: check if rare set (higher cap)
+  if (isPack) {
+    const rarePackSets = ["hidden fates","shining fates","champions path","cosmic eclipse",
+                          "evolving skies","chilling reign","battle styles","prismatic evolutions"];
+    if (rarePackSets.some(s => titleLower.includes(s))) priceMax = 28;
   }
 
   const rawQuery = buildEbaySearchQuery(title);
+  const queryWithPrefix = isPack ? "1x single " + rawQuery : rawQuery;
 
-  // eBay Browse API — item_summary/search
-  // Using live UK GBP BIN listings sorted by price ascending
-  // We take the median of the lowest cluster to approximate fair market value
-  // This is equivalent to "what would this sell for on eBay right now"
   const params = new URLSearchParams({
-    q: rawQuery,
+    q: queryWithPrefix,
     filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
     sort: "price",
     limit: "20",
-    fieldgroups: "MATCHING_ITEMS",
   });
 
-  const url = `${EBAY_BROWSE_URL}/item_summary/search?${params.toString()}`;
-
   try {
-    const res = await fetch(url, {
+    const res = await fetch(`${EBAY_BROWSE_URL}/item_summary/search?${params}`, {
       headers: {
         "Authorization": `Bearer ${token}`,
         "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
         "Accept": "application/json",
-        "Content-Language": "en-GB",
       },
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.log(`    eBay Browse API: HTTP ${res.status} for "${title.slice(0, 35)}" — ${errText.slice(0, 80)}`);
+      console.log(`    eBay Browse API: HTTP ${res.status} for "${title.slice(0,35)}"`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
-    const data = await res.json();
+    const data = res.json();
     const items = data?.itemSummaries || [];
 
     if (!items.length) {
-      console.log(`    eBay Browse: no results for "${title.slice(0, 35)}"`);
+      console.log(`    eBay Browse: no results for "${title.slice(0,35)}"`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
-    // Filter junk listings
-    // Title must contain the product type we searched for
-    // e.g. if we searched "booster pack", the result title must also say "booster pack"
-    // This prevents multi-pack lots from contaminating single-pack price averages
-    const titleKeywords = title.toLowerCase();
-    const isBox     = titleKeywords.includes("booster box") && !titleKeywords.includes("half");
-    const isHalf    = titleKeywords.includes("half");
-    const isETB     = titleKeywords.includes("elite trainer") || titleKeywords.includes("etb");
-    const isBundle  = titleKeywords.includes("bundle");
-    const isPack    = titleKeywords.includes("booster pack") && !isBox && !isETB && !isBundle;
-    const isTin     = titleKeywords.includes(" tin");
+    const junk = ["lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 "," 2x"," 3x"," 4x"," 5x",
+                  " 2 pack"," 3 pack"," 4 pack"," 5 pack","sealed (2)","sealed(2)","case of",
+                  "rip seal","graded","psa","bgs","damaged","opened",
+                  "korean","japanese","[jp]","display case","acrylic",
+                  "near mint","lightly played","1st edition","reverse holo",
+                  "holo card","full art","alt art","mystery","twin pack","double pack"];
 
-    const junk = ["lot ", " lot", "x2", "x3", "x4", "x5", "x10", "x6",
-                  "bundle of", "10 packs", "5 packs", "6 packs", "3 packs", "4 packs",
-                  "graded", "psa", "bgs", "damaged", "opened",
-                  "korean", "japanese", "[jp]", "display case", "acrylic",
-                  "near mint", "lightly played", "1st edition", "reverse holo",
-                  "holo card", "full art", "alt art", "mystery",
-                  "sealed (2)", "sealed(2)", "case of", "rip seal", "ripped seal"];
-
-    // Extract set name from original title for cross-validation
-    // If we searched "Shining Fates Booster Pack", eBay result must contain "shining fates"
-    const setNames = Object.keys({
-      "evolving skies":1,"hidden fates":1,"prismatic evolutions":1,"shining fates":1,
-      "champions path":1,"surging sparks":1,"chilling reign":1,"battle styles":1,
-      "151":1,"temporal forces":1,"paradox rift":1,"obsidian flames":1,
-      "paldean fates":1,"stellar crown":1,"journey together":1,"astral radiance":1,
-      "brilliant stars":1,"fusion strike":1,"silver tempest":1,"lost origin":1,
-      "crown zenith":1,"vivid voltage":1,"darkness ablaze":1,"rebel clash":1,
-      "ascended heroes":1,"destined rivals":1,"perfect order":1,"chaos rising":1,
-      "phantasmal flames":1,"cosmic eclipse":1,"unified minds":1,"unbroken bonds":1,
-      "base set":1,"neo genesis":1,"celebrations":1,
-    });
-    const searchedSet = setNames.find(sn => titleKeywords.includes(sn)) || null;
+    // Set name cross-validation (only for names > 5 chars)
+    const setNames = Object.keys(HOLD_DATA);
+    const searchedSet = setNames.find(sn => sn.length > 5 && titleLower.includes(sn)) || null;
 
     const prices = items
       .filter(item => {
         const t2 = (item.title || "").toLowerCase();
         if (junk.some(j => t2.includes(j))) return false;
-        // Must be in GBP
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
-        if (p <= 0) return false;
-        // Set name cross-validation: eBay listing should mention the same set
-        // Only enforce for sets with unique names (avoid false rejections on short names)
-        const setNameLong = searchedSet && searchedSet.length > 5;
-        if (setNameLong && !t2.includes(searchedSet)) return false;
-        // Product type cross-check
-        if (isBox && !t2.includes("booster box") && !t2.includes("display")) return false;
-        if (isETB && !t2.includes("elite trainer") && !t2.includes("etb")) return false;
-        if (isETB && (p < 25 || p > 280)) return false; // ETB sanity bounds
-        if (isBundle && !t2.includes("bundle")) return false;
-
-        // PACK-SPECIFIC: aggressive single-pack enforcement
-        // eBay has many multi-pack lots - we ONLY want single packs
-        if (isPack) {
-          if (!t2.includes("booster pack") && !t2.includes("single pack") && !t2.includes("single booster")) return false;
-          // Reject anything that implies multiple packs
-          const multiSignals = [" 2 pack", " 3 pack", " 4 pack", " 5 pack", " 6 pack",
-                                " 2x ", " 3x ", " 4x ", " 5x ", "x2 ", "x3 ", "x4 ", "x5 ",
-                                "×2", "×3", "×4", "×5", "bundle", "lot", "set of",
-                                "bulk", "joblot", "job lot", "mixed", "twin pack", "double pack"];
-          if (multiSignals.some(ms => t2.includes(ms))) return false;
-          // Tiered price cap for single packs based on set age/rarity
-          // Standard SwSh/SV: £5-14. Premium older sets: £14-25.
-          // These are set in the searchedSet context below via priceFloor.
-          const isRarePack = searchedSet && [
-            "hidden fates", "shining fates", "champions path", "cosmic eclipse",
-            "evolving skies", "chilling reign", "battle styles", "vivid voltage",
-            "celebrations", "prismatic evolutions",
-          ].includes(searchedSet);
-          const packMax = isRarePack ? 28 : 15; // standard SwSh/SV packs cap at £15
-          if (p > packMax) return false;
-        }
+        if (p < priceMin || p > priceMax) return false;
+        if (searchedSet && !t2.includes(searchedSet)) return false;
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
       .filter(p => p > 0)
-      .sort((a, b) => a - b);
+      .sort((a,b) => a-b);
 
     if (!prices.length) {
-      console.log(`    eBay Browse: all results filtered for "${title.slice(0, 35)}"`);
+      console.log(`    eBay Browse: all results filtered for "${title.slice(0,35)}"`);
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
 
-    // Dynamic trimming — more aggressive for packs (higher contamination risk)
-    // Standard: remove bottom 15% and top 20% → middle 65%
-    // Packs: remove bottom 20% and top 30% → middle 50% (tighter, more accurate)
+    // Aggressive trimming for packs, standard for others
     const botPct = isPack ? 0.20 : 0.15;
     const topPct = isPack ? 0.30 : 0.20;
     const trimBot = Math.max(0, Math.floor(prices.length * botPct));
     const trimTop = Math.max(0, Math.floor(prices.length * topPct));
     const trimmed = prices.slice(trimBot, prices.length - trimTop);
 
-    if (!trimmed.length) {
-      _ebayPriceCache.set(cacheKey, null);
-      return null;
-    }
+    if (!trimmed.length) { _ebayPriceCache.set(cacheKey, null); return null; }
 
-    // Mean of trimmed set = fair average market price
-    const mean = trimmed.reduce((sum, p) => sum + p, 0) / trimmed.length;
+    const mean = trimmed.reduce((s,p) => s+p, 0) / trimmed.length;
     const fairValue = Math.round(mean * 100) / 100;
 
-    // Confidence based on sample size
     let confidence = "LOW";
     if (trimmed.length >= 8) confidence = "HIGH";
     else if (trimmed.length >= 3) confidence = "MEDIUM";
 
-    const result = {
-      fairValue,
-      confidence,
-      sampleSize: trimmed.length,
-      freshness: new Date().toISOString(),
-      source: "ebay_browse",
-    };
-
+    const result = { fairValue, confidence, sampleSize: trimmed.length,
+                     freshness: new Date().toISOString(), source: "ebay_browse" };
     console.log(`    eBay market: "${title.slice(0,35)}" → £${fairValue} (n=${trimmed.length}, ${confidence})`);
     _ebayPriceCache.set(cacheKey, result);
     return result;
@@ -288,45 +525,227 @@ async function getEbaySoldPrice(title, token) {
 }
 
 
-// ─── EBAY LIVE DEAL SCANNER ───────────────────────────────────────────────────
-// Searches eBay UK directly for underpriced sealed Pokémon products
-// Completely separate from retailer scraping — these ARE eBay listings
-// Writes to ebay_deals.json in the lock3ys-den repo
+// ─── EBAY FINDING API (Sold Listings) ─────────────────────────────────────────
+// Uses App ID directly — no OAuth needed
+// Returns actual completed sale prices — more accurate than BIN listings
+// Combined with Browse API gives us the most complete market picture
 
-const EBAY_SEARCH_TARGETS = [
-  // High-demand sets where deals appear frequently
-  { q: "pokemon evolving skies booster box sealed",      type: "Booster Box",    marketMin: 190, marketMax: 260 },
-  { q: "pokemon hidden fates booster box sealed",        type: "Booster Box",    marketMin: 200, marketMax: 320 },
-  { q: "pokemon shining fates elite trainer box sealed", type: "ETB",            marketMin: 80,  marketMax: 160 },
-  { q: "pokemon prismatic evolutions etb sealed",        type: "ETB",            marketMin: 60,  marketMax: 120 },
-  { q: "pokemon evolving skies elite trainer box sealed",type: "ETB",            marketMin: 100, marketMax: 200 },
-  { q: "pokemon brilliant stars elite trainer box",      type: "ETB",            marketMin: 110, marketMax: 180 },
-  { q: "pokemon chilling reign booster box sealed",      type: "Booster Box",    marketMin: 200, marketMax: 280 },
-  { q: "pokemon silver tempest booster box sealed",      type: "Booster Box",    marketMin: 280, marketMax: 500 },
-  { q: "pokemon surging sparks booster box sealed",      type: "Booster Box",    marketMin: 200, marketMax: 320 },
-  { q: "pokemon 151 booster bundle sealed",              type: "Booster Bundle", marketMin: 40,  marketMax: 90  },
-  { q: "pokemon destined rivals booster box sealed",     type: "Booster Box",    marketMin: 100, marketMax: 160 },
-  { q: "pokemon champions path etb sealed",              type: "ETB",            marketMin: 200, marketMax: 400 },
-  { q: "pokemon crown zenith elite trainer box sealed",  type: "ETB",            marketMin: 90,  marketMax: 140 },
-  { q: "pokemon cosmic eclipse booster box sealed",      type: "Booster Box",    marketMin: 250, marketMax: 500 },
-  { q: "pokemon celebrations elite trainer box sealed",  type: "ETB",            marketMin: 60,  marketMax: 140 },
-];
+const EBAY_FINDING_URL = "https://svcs.ebay.com/services/search/FindingService/v1";
 
-// How good a deal needs to be to appear in the eBay tab
-const EBAY_MIN_DISCOUNT_PCT = 8; // at least 8% below our known market range floor
+async function getEbaySoldPrice_Finding(title) {
+  if (!EBAY_CLIENT_ID) return null;
+  
+  const cacheKey = `finding:${title.toLowerCase().trim()}`;
+  if (_externalPriceCache.has(cacheKey)) return _externalPriceCache.get(cacheKey);
 
-async function scanEbayForDeals(token) {
-  if (!token) {
-    console.log("  ⚠️ No eBay token — skipping eBay deal scan");
-    return [];
+  const query = buildEbaySearchQuery(title);
+  
+  const params = new URLSearchParams({
+    "OPERATION-NAME": "findCompletedItems",
+    "SERVICE-VERSION": "1.0.0",
+    "SECURITY-APPNAME": EBAY_CLIENT_ID,
+    "RESPONSE-DATA-FORMAT": "JSON",
+    "siteid": "3",  // eBay UK
+    "keywords": query,
+    "itemFilter(0).name": "SoldItemsOnly",
+    "itemFilter(0).value": "true",
+    "itemFilter(1).name": "ListingCountry",
+    "itemFilter(1).value": "3",
+    "itemFilter(2).name": "HideDuplicateItems",
+    "itemFilter(2).value": "true",
+    "itemFilter(3).name": "Currency",
+    "itemFilter(3).value": "GBP",
+    "sortOrder": "EndTimeSoonest",
+    "paginationInput.entriesPerPage": "20",
+    "paginationInput.pageNumber": "1",
+  });
+
+  try {
+    const res = await fetch(`${EBAY_FINDING_URL}?${params}`, {
+      headers: { "User-Agent": "ShinyDen/1.0", "Accept": "application/json" },
+      timeout: 10000,
+    });
+
+    if (!res.ok) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const data = res.json();
+    const response = data?.findCompletedItemsResponse?.[0];
+    const ack = response?.ack?.[0];
+    
+    if (ack !== "Success" && ack !== "Warning") {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const items = response?.searchResult?.[0]?.item || [];
+    if (!items.length) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    const titleLower = title.toLowerCase();
+    const isPack = titleLower.includes("booster pack") && !titleLower.includes("booster box");
+    
+    const junk = ["lot "," lot","x2","x3","x4","x5","sealed (2)","case of",
+                  "graded","psa","bgs","korean","japanese","[jp]","damaged","opened"];
+
+    const prices = items
+      .filter(item => {
+        const t2 = (item.title?.[0] || "").toLowerCase();
+        if (junk.some(j => t2.includes(j))) return false;
+        const currency = item.sellingStatus?.[0]?.currentPrice?.[0]?.["@currencyId"];
+        if (currency !== "GBP") return false;
+        const p = parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.["__value__"] || 0);
+        if (isPack && p > 18) return false;
+        if (isPack && p > 280) return false;
+        return p > 0;
+      })
+      .map(item => parseFloat(item.sellingStatus?.[0]?.currentPrice?.[0]?.["__value__"] || 0))
+      .filter(p => p > 0)
+      .sort((a,b) => a-b);
+
+    if (!prices.length) {
+      _externalPriceCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Trim outliers: bottom 15%, top 20%
+    const trimBot = Math.max(0, Math.floor(prices.length * 0.15));
+    const trimTop = Math.max(0, Math.floor(prices.length * 0.20));
+    const trimmed = prices.slice(trimBot, prices.length - trimTop);
+    if (!trimmed.length) { _externalPriceCache.set(cacheKey, null); return null; }
+
+    const mean = trimmed.reduce((s,p) => s+p, 0) / trimmed.length;
+    const fairValue = Math.round(mean * 100) / 100;
+    
+    let confidence = "LOW";
+    if (trimmed.length >= 8) confidence = "HIGH";
+    else if (trimmed.length >= 3) confidence = "MEDIUM";
+
+    const result = { fairValue, confidence, sampleSize: trimmed.length,
+                     source: "ebay_sold", freshness: new Date().toISOString() };
+    console.log(`    eBay SOLD: "${title.slice(0,35)}" → £${fairValue} (n=${trimmed.length}, ${confidence})`);
+    _externalPriceCache.set(cacheKey, result);
+    return result;
+
+  } catch (e) {
+    _externalPriceCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// ─── COMBINED PRICE: Sold (60%) + BIN (40%) ────────────────────────────────────
+// Sold prices are more accurate (actual transactions) so weighted higher
+async function getCombinedPrice(title, token) {
+  const [browseResult, soldResult] = await Promise.all([
+    getEbaySoldPrice(title, token),
+    getEbaySoldPrice_Finding(title),
+  ]);
+
+  if (browseResult && soldResult) {
+    // Both sources: weight sold 60%, BIN 40%
+    const combined = soldResult.fairValue * 0.60 + browseResult.fairValue * 0.40;
+    const fairValue = Math.round(combined * 100) / 100;
+    console.log(`    Combined: £${soldResult.fairValue} (sold) + £${browseResult.fairValue} (BIN) = £${fairValue}`);
+    return {
+      fairValue,
+      confidence: browseResult.confidence === "HIGH" && soldResult.confidence === "HIGH" ? "HIGH" : "MEDIUM",
+      sampleSize: browseResult.sampleSize + soldResult.sampleSize,
+      source: "ebay_browse+sold",
+      freshness: new Date().toISOString(),
+    };
+  }
+  if (soldResult) return soldResult;
+  if (browseResult) return browseResult;
+  return null;
+}
+
+// ─── DEAL SCORE (0-100) ────────────────────────────────────────────────────────
+function computeDealScore(buy, rrp, ebayResult, holdData) {
+  let score = 30;
+  const market = ebayResult?.fairValue || getMarket("") || null;
+  if (!market || !buy) return score;
+
+  const fvf = market * EF + FEE_FIXED;
+  const net = market - buy - fvf - POST;
+  const roi = buy > 0 ? (net / buy) * 100 : 0;
+
+  // Flip ROI component (0-50 pts)
+  if (roi >= 25)       score += 50;
+  else if (roi >= 15)  score += 38;
+  else if (roi >= 8)   score += 25;
+  else if (roi >= 2)   score += 12;
+  else if (roi >= 0)   score += 4;
+  else                 score -= 15;
+
+  // eBay confidence bonus (0-10 pts)
+  if (ebayResult?.confidence === "HIGH")   score += 10;
+  else if (ebayResult?.confidence === "MEDIUM") score += 5;
+
+  // Hold bonus (0-15 pts)
+  if (holdData) {
+    const hs = holdData.score || 5;
+    score += Math.min(15, Math.round(hs * 1.5));
   }
 
+  // RRP discount bonus (0-10 pts)
+  if (rrp && buy < rrp) {
+    const rrpDisc = (rrp - buy) / rrp;
+    if (rrpDisc > 0.3) score += 10;
+    else if (rrpDisc > 0.15) score += 5;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function gradeFromScore(score, hasHoldData) {
+  if (score >= 82) return "S";
+  if (score >= 68) return "A";
+  if (score >= 54) return "B";
+  if (score >= 40) return "C";
+  if (score >= 28 && hasHoldData) return "H";
+  return "D";
+}
+
+// ─── EBAY LIVE DEAL SCANNER ────────────────────────────────────────────────────
+// Searches eBay UK directly for underpriced sealed Pokémon
+// Writes to ebay_deals.json — completely separate from deals.json
+
+const EBAY_SEARCH_TARGETS = [
+  { q:"pokemon evolving skies booster box sealed",               type:"Booster Box",    marketMin:190, marketMax:260 },
+  { q:"pokemon evolving skies elite trainer box sealed",         type:"ETB",            marketMin:100, marketMax:190 },
+  { q:"pokemon hidden fates booster box sealed",                 type:"Booster Box",    marketMin:200, marketMax:320 },
+  { q:"pokemon shining fates elite trainer box sealed",          type:"ETB",            marketMin:80,  marketMax:150 },
+  { q:"pokemon prismatic evolutions elite trainer box sealed",   type:"ETB",            marketMin:60,  marketMax:110 },
+  { q:"pokemon brilliant stars elite trainer box sealed",        type:"ETB",            marketMin:120, marketMax:175 },
+  { q:"pokemon chilling reign booster box sealed",               type:"Booster Box",    marketMin:220, marketMax:290 },
+  { q:"pokemon chilling reign elite trainer box sealed",         type:"ETB",            marketMin:100, marketMax:140 },
+  { q:"pokemon silver tempest elite trainer box sealed",         type:"ETB",            marketMin:90,  marketMax:130 },
+  { q:"pokemon surging sparks booster box sealed",               type:"Booster Box",    marketMin:200, marketMax:310 },
+  { q:"pokemon surging sparks elite trainer box sealed",         type:"ETB",            marketMin:55,  marketMax:90  },
+  { q:"pokemon 151 booster bundle sealed",                       type:"Booster Bundle", marketMin:40,  marketMax:85  },
+  { q:"pokemon 151 elite trainer box sealed",                    type:"ETB",            marketMin:55,  marketMax:90  },
+  { q:"pokemon destined rivals booster box sealed",              type:"Booster Box",    marketMin:110, marketMax:155 },
+  { q:"pokemon champions path elite trainer box sealed",         type:"ETB",            marketMin:200, marketMax:380 },
+  { q:"pokemon crown zenith elite trainer box sealed",           type:"ETB",            marketMin:95,  marketMax:135 },
+  { q:"pokemon cosmic eclipse booster box sealed",               type:"Booster Box",    marketMin:250, marketMax:480 },
+  { q:"pokemon celebrations elite trainer box sealed",           type:"ETB",            marketMin:60,  marketMax:130 },
+  { q:"pokemon battle styles booster box sealed",                type:"Booster Box",    marketMin:250, marketMax:320 },
+  { q:"pokemon fusion strike booster box sealed",                type:"Booster Box",    marketMin:190, marketMax:240 },
+];
+
+const EBAY_MIN_DISCOUNT_PCT = 8;
+
+async function scanEbayForDeals(token) {
+  if (!token) { console.log("  ⚠️ No eBay token — skipping eBay deal scan"); return []; }
   console.log("\n🛒 Scanning eBay UK for live deals...");
   const deals = [];
-  const junkTerms = ["lot ", " lot", "x2 ", "x3 ", "x4 ", " 2x", " 3x",
-                      "sealed (2)", "case of", "rip seal", "damaged",
-                      "opened", "korean", "japanese", "[jp]", "bundle of",
-                      "graded", "psa", "bgs", "display case"];
+  const junk = ["lot "," lot","x2 ","x3 ","x4 ","x5 ","x10 ","sealed (2)","sealed(2)",
+                "case of","rip seal","damaged","opened","korean","japanese","[jp]",
+                "bundle of","graded","psa","bgs","twin pack","double pack"];
 
   for (const target of EBAY_SEARCH_TARGETS) {
     try {
@@ -339,1756 +758,297 @@ async function scanEbayForDeals(token) {
 
       const res = await fetch(`${EBAY_BROWSE_URL}/item_summary/search?${params}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          "Authorization": `Bearer ${token}`,
           "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
-          Accept: "application/json",
+          "Accept": "application/json",
         },
       });
 
       if (!res.ok) continue;
-      const data = await res.json();
+      const data = res.json();
       const items = data?.itemSummaries || [];
 
       for (const item of items) {
         const title = item.title || "";
         const tl = title.toLowerCase();
         const price = parseFloat(item.price?.value || 0);
-        const currency = item.price?.currency;
+        if (!price || item.price?.currency !== "GBP") continue;
+        if (junk.some(j => tl.includes(j))) continue;
+        if (price < target.marketMin * 0.5) continue;
 
-        // Basic validation
-        if (!price || currency !== "GBP") continue;
-        if (junkTerms.some(j => tl.includes(j))) continue;
-        if (price < target.marketMin * 0.5) continue; // too cheap = fake/wrong
-
-        // Is this a deal? Must be below our known market floor
         const dealThreshold = target.marketMin * (1 - EBAY_MIN_DISCOUNT_PCT / 100);
         if (price > dealThreshold) continue;
 
-        // Calculate deal strength
         const midMarket = (target.marketMin + target.marketMax) / 2;
-        const fvf = midMarket * 0.129 + 0.30;
-        const netProfit = +(midMarket - price - fvf - 4).toFixed(2);
+        const fvf = midMarket * EF + FEE_FIXED;
+        const netProfit = +(midMarket - price - fvf - POST).toFixed(2);
         const roi = Math.round(netProfit / price * 100);
         const pctBelow = Math.round((1 - price / target.marketMin) * 100);
 
-        if (roi < 5) continue; // must have at least 5% flip ROI
+        if (roi < 5) continue;
 
         const image = item.thumbnailImages?.[0]?.imageUrl || item.image?.imageUrl || null;
-        const url = item.itemWebUrl || item.itemAffiliateWebUrl || "";
-
         deals.push({
           id: item.itemId,
-          title,
-          type: target.type,
-          price,
-          marketFloor: target.marketMin,
-          marketCeil: target.marketMax,
-          midMarket,
-          netProfit,
-          roi,
-          pctBelow,
-          image,
-          url,
-          condition: item.condition || "New",
-          seller: item.seller?.username || "",
-          watchCount: item.watchCount || 0,
-          source: "ebay_live",
-          scannedAt: new Date().toISOString(),
+          title, type: target.type, price, marketFloor: target.marketMin,
+          marketCeil: target.marketMax, midMarket, netProfit, roi, pctBelow,
+          image, url: item.itemWebUrl || "", condition: item.condition || "New",
+          source: "ebay_live", scannedAt: new Date().toISOString(),
         });
       }
-
-      await new Promise(r => setTimeout(r, 500)); // rate limiting
     } catch (e) {
-      console.log(`  eBay scan error for "${target.q.slice(0,30)}": ${e.message}`);
+      console.log(`  eBay scan error: ${e.message}`);
     }
+    await delay(500);
   }
 
-  // Deduplicate by itemId, sort by ROI
   const seen = new Set();
   const unique = deals
     .filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; })
-    .sort((a, b) => b.roi - a.roi);
+    .sort((a,b) => b.roi - a.roi);
 
-  console.log(`  📦 Found ${unique.length} eBay deals worth acting on`);
+  console.log(`  📦 Found ${unique.length} eBay live deals`);
   return unique;
 }
 
-async function saveEbayDealsToGitHub(deals) {
-  if (!GH_TOKEN) return;
+// ─── GITHUB SAVE ───────────────────────────────────────────────────────────────
+async function saveToGitHub(filename, content) {
+  if (!GH_TOKEN) { console.log(`⚠️ No GH_TOKEN — skipping ${filename}`); return; }
   try {
     let sha;
     try {
       const ex = await fetch(
-        `https://api.github.com/repos/${GH_REPO}/contents/ebay_deals.json`,
+        `https://api.github.com/repos/${GH_REPO}/contents/${filename}`,
         { headers: { Authorization: `token ${GH_TOKEN}`, "User-Agent": "pokescraper" } }
       );
       if (ex.ok) sha = (await ex.json()).sha;
     } catch {}
 
-    const payload = { deals, updatedAt: new Date().toISOString(), count: deals.length };
-    const content = Buffer.from(JSON.stringify(payload, null, 2)).toString("base64");
+    const b64 = Buffer.from(JSON.stringify(content, null, 2)).toString("base64");
     const res = await fetch(
-      `https://api.github.com/repos/${GH_REPO}/contents/ebay_deals.json`,
+      `https://api.github.com/repos/${GH_REPO}/contents/${filename}`,
       {
         method: "PUT",
-        headers: {
-          Authorization: `token ${GH_TOKEN}`,
-          "Content-Type": "application/json",
-          "User-Agent": "pokescraper",
-        },
-        body: JSON.stringify({
-          message: `ebay deals update ${new Date().toISOString()}`,
-          content,
-          ...(sha ? { sha } : {}),
-        }),
+        headers: { Authorization: `token ${GH_TOKEN}`, "Content-Type": "application/json", "User-Agent": "pokescraper" },
+        body: JSON.stringify({ message: `update ${filename} ${new Date().toISOString()}`, content: b64, ...(sha ? {sha} : {}) }),
       }
     );
-    if (res.ok) console.log(`  ✅ Saved ${deals.length} eBay deals to ebay_deals.json`);
-    else console.log("  ❌ eBay deals save error:", (await res.json()).message);
+    if (res.ok) console.log(`✅ Saved ${filename}`);
+    else console.log(`❌ Save error for ${filename}:`, (await res.json()).message);
   } catch (e) {
-    console.log("  ❌ eBay deals save error:", e.message);
+    console.log(`❌ Save error for ${filename}:`, e.message);
   }
 }
 
-
-// ─── MULTI-SOURCE PRICING ────────────────────────────────────────────────────
-// Combines Browse API (live BIN) + PokeData (eBay sold history) 
-// for more accurate fair market values
-
-// In-memory cache for external price lookups
-const _externalPriceCache = new Map();
-
-// PokeData.io — free, no auth, has eBay UK sold price history
-// Returns recent sold prices which are more accurate than BIN listings
-async function getPokeDataPrice(productName) {
-  const cacheKey = `pokedata:${productName.toLowerCase()}`;
-  if (_externalPriceCache.has(cacheKey)) return _externalPriceCache.get(cacheKey);
-
+// ─── TELEGRAM ALERT ────────────────────────────────────────────────────────────
+async function sendAlert(deal) {
+  if (!TELE_TOKEN || !TELE_CHAT) return;
   try {
-    // Build search query — PokeData uses set name + product type
-    const encoded = encodeURIComponent(productName.toLowerCase()
-      .replace(/pokemon/gi, "").replace(/tcg/gi, "").replace(/sealed/gi, "").trim());
-    
-    const res = await fetch(
-      `https://www.pokedata.io/api/v0/products/search?query=${encoded}&language=English`,
-      {
-        headers: { "User-Agent": "ShinyDen/1.0 (price research)", "Accept": "application/json" },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
-    
-    if (!res.ok) {
-      _externalPriceCache.set(cacheKey, null);
-      return null;
-    }
-    
-    const data = await res.json();
-    const products = data?.products || data?.results || [];
-    
-    if (!products.length) {
-      _externalPriceCache.set(cacheKey, null);
-      return null;
-    }
-
-    // Find best matching product
-    const nameLower = productName.toLowerCase();
-    const match = products.find(p => {
-      const pn = (p.name || p.product_name || "").toLowerCase();
-      return nameLower.includes("booster box") && pn.includes("booster box") ||
-             nameLower.includes("elite trainer") && (pn.includes("elite trainer") || pn.includes("etb")) ||
-             nameLower.includes("booster pack") && pn.includes("booster pack");
-    }) || products[0];
-
-    if (!match) {
-      _externalPriceCache.set(cacheKey, null);
-      return null;
-    }
-
-    // Get the eBay UK sold price (market_price field or ebay_price)
-    const marketPrice = match.market_price_gbp || match.ebay_price_gbp || 
-                        match.market_price || match.price_gbp || null;
-
-    if (!marketPrice || marketPrice <= 0) {
-      _externalPriceCache.set(cacheKey, null);
-      return null;
-    }
-
-    const result = { price: parseFloat(marketPrice), source: "pokedata", confidence: "MEDIUM" };
-    console.log(`    PokeData: "${productName.slice(0,35)}" → £${result.price}`);
-    _externalPriceCache.set(cacheKey, result);
-    return result;
-
-  } catch (e) {
-    _externalPriceCache.set(cacheKey, null);
-    return null;
-  }
-}
-
-// ── COMBINED FAIR VALUE ────────────────────────────────────────────────────────
-// Combines Browse API (live BIN) + PokeData (sold history)
-// Weights sold data higher than BIN data (more reliable)
-async function getCombinedFairValue(title, browseResult) {
-  // Try PokeData for sold price data
-  const pokeData = await getPokeDataPrice(title);
-
-  if (!browseResult && !pokeData) return null;
-
-  if (browseResult && pokeData?.price) {
-    // Both sources: weight sold data 60%, BIN data 40%
-    const combined = pokeData.price * 0.60 + browseResult.fairValue * 0.40;
-    return {
-      fairValue: Math.round(combined * 100) / 100,
-      confidence: "HIGH",
-      sampleSize: browseResult.sampleSize,
-      freshness: new Date().toISOString(),
-      source: "ebay_browse+pokedata",
-      sources: { browse: browseResult.fairValue, pokedata: pokeData.price },
-    };
-  }
-
-  if (pokeData?.price) {
-    return {
-      fairValue: pokeData.price,
-      confidence: "MEDIUM",
-      sampleSize: 0,
-      freshness: new Date().toISOString(),
-      source: "pokedata",
-    };
-  }
-
-  // Browse API only
-  return { ...browseResult, source: "ebay_browse" };
-}
-
-// ─── PHASE 4: DEAL SCORE (0-100) — multi-factor, eBay-data-driven ────────────
-function computeDealScore(buyNow, rrp, ebayResult, holdData) {
-  let score = 50; // neutral baseline
-
-  const fairValue = ebayResult?.fairValue || null;
-  const confidence = ebayResult?.confidence || "NONE";
-  const sampleSize = ebayResult?.sampleSize || 0;
-
-  // ── 1. Flip ROI vs eBay fair value (max ±40 points) ──────────────────────
-  if (fairValue && buyNow > 0) {
-    const roi = ((fairValue - buyNow) / buyNow) * 100;
-    score += Math.min(40, Math.max(-40, roi * 1.4));
-  }
-
-  // ── 2. eBay data confidence (max +15 points) ──────────────────────────────
-  if (confidence === "HIGH")   score += 15;
-  else if (confidence === "MEDIUM") score += 8;
-  else if (confidence === "LOW")    score += 3;
-  // NONE = 0 bonus
-
-  // ── 3. Sample size bonus (max +5 points) ──────────────────────────────────
-  if (sampleSize >= 10) score += 5;
-  else if (sampleSize >= 5) score += 3;
-
-  // ── 4. RRP comparison — secondary signal (max +8 points) ─────────────────
-  if (rrp && buyNow > 0) {
-    const vsRrp = ((rrp - buyNow) / rrp) * 100;
-    if (vsRrp >= 20) score += 8;
-    else if (vsRrp >= 10) score += 5;
-    else if (vsRrp >= 0) score += 2;
-    else if (vsRrp <= -30) score -= 5; // significantly above RRP, penalise
-  }
-
-  // ── 5. Hold score — benefits borderline deals (max +7 points) ─────────────
-  if (holdData) {
-    score += (holdData.holdScore || holdData.score || 0) * 0.7;
-  }
-
-  // ── 6. Freshness — stale data penalty ────────────────────────────────────
-  if (ebayResult?.freshness) {
-    const ageHours = (Date.now() - new Date(ebayResult.freshness)) / 3600000;
-    if (ageHours > 168) score -= 8; // > 1 week old: penalise
-    else if (ageHours > 72) score -= 3;
-  }
-
-  return Math.round(Math.max(0, Math.min(100, score)));
-}
-
-// ─── PHASE 4: GRADE FROM DEAL SCORE ───────────────────────────────────────────
-function gradeFromScore(score, hasHoldData) {
-  if (score >= 82) return "S"; // HOT DEAL
-  if (score >= 68) return "A"; // BUY
-  if (score >= 54) return "B"; // FLIP
-  if (score >= 40) return "C"; // MARGINAL
-  // H (HOLD) only if score is 28-39 AND product has meaningful hold data
-  if (score >= 28 && hasHoldData) return "H"; // HOLD
-  return "D";                  // AVOID
-}
-
-
-// ─── RRP TABLE (UK official retail prices) ─────────────────────────────────
-// Sources: Pokemon Center UK, official retailer SRPs, May 2026
-const RRP = {
-  // Generic fallbacks by product type
-  "booster box":              144.99,
-  "half booster box":          74.99,
-  "half box":                  74.99,
-  "elite trainer box":         49.99,
-  "etb":                       49.99,
-  "booster bundle":            24.99,
-  "booster pack":               4.99,  // SV era £4.99 (was £4.49 in SwSh)
-  "mini tins":                 22.99,
-  "collection box":            34.99,
-  "poster collection":         19.99,
-  "build and battle":          24.99,
-  "pin collection":            19.99,
-  "deluxe pin collection":     34.99,
-  "premier deck":              49.99,
-  "ultra premium collection": 119.99,
-  "upc":                      119.99,
-  "league battle deck":        39.99,
-  "tin":                       24.99,
-  "tins":                      24.99,
-  "collector tin":             24.99,
-  "blister":                   12.99,
-  "blisters":                  12.99,
-  "check lane":                 9.99,
-  "premium collection":        34.99,
-  "special collection":        29.99,
-  "figure collection":         24.99,
-  "collection chest":          34.99,
-  "gift set":                  34.99,
-  "battle deck":               14.99,
-  "v battle deck":             19.99,
-  "trainer kit":               19.99,
-  "advent":                    29.99,
-};
-
-// ─── MARKET PRICES (eBay UK SOLD listings) ─────────────────────────────────
-// Updated May 14 2026 — eBay UK completed listings median sold prices
-// Source: eBay UK sold, PriceCharting, CardChill, GamesRadar tracking
-const MARKET = {
-  // ── MEGA EVOLUTION ERA (2026) ──────────────────────────────────────────
-  // Ascended Heroes (ME01) — eBay UK boxes £110-140, median ~£125
-  "ascended heroes booster box":        125,
-  "ascended heroes elite trainer box":   62,
-  "ascended heroes etb":                 62,
-  "ascended heroes booster bundle":      35,
-  "ascended heroes half booster box":    72,
-  "ascended heroes half box":            72,
-  "ascended heroes booster pack":         7,
-  "ascended heroes blister":             14,
-  "ascended heroes tin":                 28,
-
-  // Destined Rivals (ME02/SV10) — eBay UK boxes £95-115, median ~£105
-  // Half boxes £55-65, ETBs £48-55
-  "destined rivals booster box":        125,  // Updated May 2026 — eBay UK median
-  "destined rivals elite trainer box":   58,  // Updated May 2026
-  "destined rivals etb":                 58,
-  "destined rivals booster bundle":      32,
-  "destined rivals half booster box":    60,
-  "destined rivals half box":            60,
-  "destined rivals booster pack":          7.00,  // SV pack pricing
-  "destined rivals blister":             12,
-  "destined rivals tin":                 25,
-
-  // Perfect Order (ME03) — eBay UK boxes £115-145, median ~£130
-  "perfect order booster box":          130,
-  "perfect order elite trainer box":     60,
-  "perfect order etb":                   60,
-  "perfect order booster bundle":        32,
-  "perfect order booster pack":           7.50,
-  "perfect order tin":                   26,
-
-  // Chaos Rising (ME04) — released May 22 2026, preorders £120-160
-  "chaos rising booster box":           145,
-  "chaos rising elite trainer box":      65,
-  "chaos rising etb":                    65,
-  "chaos rising booster bundle":         35,
-  "chaos rising booster pack":            8,
-  "chaos rising tin":                    28,
-
-  // Phantasmal Flames (ME05) — announced, ~£150-165 predicted
-  "phantasmal flames booster box":      158,
-  "phantasmal flames elite trainer box": 75,
-  "phantasmal flames etb":               75,
-  "phantasmal flames booster pack":       9.50,
-
-  // ── SCARLET & VIOLET ──────────────────────────────────────────────────
-  // Journey Together (SV09) — eBay UK £110-120 booster box
-  "journey together booster box":       115,
-  "journey together elite trainer box":  50,
-  "journey together etb":                50,
-  "journey together booster bundle":     27,
-  "journey together half booster box":   65,
-  "journey together half box":           65,
-  "journey together booster pack":        5,
-  "journey together tin":                22,
-  "journey together blister":            11,
-
-  // Prismatic Evolutions (SV08.5) — market has stabilised May 2026
-  // Booster box ~£180-200, bundle £55-65, ETB £75-85, packs £12-15
-  "prismatic evolutions booster box":    190,
-  "prismatic evolutions booster bundle":  60,
-  "prismatic evolutions elite trainer box": 80,
-  "prismatic evolutions etb":             80,
-  "prismatic evolutions booster pack":    13,
-  "prismatic evolutions blister":         22,
-  "prismatic evolutions tin":             28,
-  "prismatic evolutions premium collection": 75,
-
-  // Surging Sparks (SV08) — booster boxes £195-235 UK May 2026 (150-250% gains over 18mo)
-  "surging sparks booster box":         215,
-  "surging sparks elite trainer box":    58,
-  "surging sparks etb":                  58,
-  "surging sparks booster bundle":       32,
-  "surging sparks booster pack":          7,
-  "surging sparks tin":                  22,
-  "surging sparks blister":              13,
-
-  // Stellar Crown (SV07)
-  "stellar crown booster box":          148,
-  "stellar crown elite trainer box":     58,
-  "stellar crown etb":                   58,
-  "stellar crown booster bundle":        30,
-  "stellar crown booster pack":           6.50,
-  "stellar crown tin":                   19,
-
-  // Shrouded Fable (SV06.5)
-  "shrouded fable booster box":          98,
-  "shrouded fable booster pack":          4.80,
-
-  // Twilight Masquerade (SV06)
-  "twilight masquerade booster box":    118,
-  "twilight masquerade elite trainer box": 48,
-  "twilight masquerade etb":             48,
-  "twilight masquerade booster bundle":  28,
-  "twilight masquerade booster pack":     7,
-  "twilight masquerade tin":             18,
-
-  // Temporal Forces (SV05)
-  "temporal forces booster box":        102,
-  "temporal forces elite trainer box":   46,
-  "temporal forces etb":                 46,
-  "temporal forces half booster box":    58,
-  "temporal forces half box":            58,
-  "temporal forces booster pack":         5,
-  "temporal forces tin":                 17,
-
-  // Paradox Rift (SV04)
-  "paradox rift booster box":           108,
-  "paradox rift elite trainer box":      48,
-  "paradox rift etb":                    48,
-  "paradox rift half booster box":       60,
-  "paradox rift half box":               60,
-  "paradox rift booster pack":            5,
-  "paradox rift tin":                    19,
-
-  // Obsidian Flames (SV03)
-  "obsidian flames booster box":        118,
-  "obsidian flames elite trainer box":   50,
-  "obsidian flames etb":                 50,
-  "obsidian flames booster bundle":      28,
-  "obsidian flames booster pack":        10,
-  "obsidian flames tin":                 19,
-
-  // Paldea Evolved (SV02)
-  "paldea evolved booster box":          92,
-  "paldea evolved booster bundle":       26,
-  "paldea evolved elite trainer box":    42,
-  "paldea evolved etb":                  42,
-  "paldea evolved booster pack":          8,
-  "paldea evolved tin":                  15,
-
-  // Paldean Fates (SV04.5) — shiny vault
-  "paldean fates booster box":          132,
-  "paldean fates booster bundle":        36,
-  "paldean fates elite trainer box":     60,
-  "paldean fates etb":                   60,
-  "paldean fates booster pack":          12,
-  "paldean fates tin":                   21,
-
-  // Scarlet & Violet Base (SV01)
-  "scarlet violet booster box":          102,
-  "scarlet violet elite trainer box":     46,
-  "scarlet violet etb":                   46,
-  "scarlet violet booster pack":           7,
-  "scarlet violet tin":                   17,
-
-  // 151 (SV03.5) — consistently popular
-  "151 booster box":                     178,
-  "151 booster bundle":                   50,
-  "151 elite trainer box":                68,
-  "151 etb":                              68,
-  "151 booster pack":                      8,
-  "151 poster collection":                25,
-
-  // ── SWORD & SHIELD ERA ────────────────────────────────────────────────
-  "crown zenith booster box":           128,
-  "crown zenith elite trainer box":     118,
-  "crown zenith etb":                    60,
-  "crown zenith booster pack":           10,
-  "crown zenith tin":                    19,
-
-  "silver tempest booster box":         112,
-  "silver tempest elite trainer box":   108,
-  "silver tempest etb":                  52,
-  "silver tempest booster pack":         10,
-  "silver tempest tin":                  17,
-
-  "lost origin booster box":            122,
-  "lost origin elite trainer box":       95,
-  "lost origin etb":                     50,
-  "lost origin booster pack":             8.50,
-
-  "astral radiance booster box":        120,
-  "astral radiance elite trainer box":  100,
-  "astral radiance etb":                 48,
-  "astral radiance booster pack":         8,
-
-  "brilliant stars booster box":        225,
-  "brilliant stars elite trainer box":  148,  // May 2026 eBay UK (API confirmed)
-  "brilliant stars etb":                148,
-  "brilliant stars booster pack":        10,
-  "brilliant stars tin":                 18,
-
-  "fusion strike booster box":          215,
-  "fusion strike elite trainer box":     95,
-  "fusion strike etb":                   95,
-  "fusion strike booster pack":           9.50,
-
-  // Evolving Skies (SWSH07) — UK median May 2026
-  // Boxes £200-230, ETBs £140-160, packs £22-28
-  "evolving skies booster box":         215,
-  "evolving skies elite trainer box":   150,
-  "evolving skies etb":                 150,
-  "evolving skies booster pack":         25,
-  "evolving skies tin":                  40,
-  "evolving skies blister":              24,
-
-  "chilling reign booster box":         152,
-  "chilling reign elite trainer box":   115,
-  "chilling reign etb":                 115,
-  "chilling reign booster pack":         12,
-  "chilling reign tin":                  21,
-
-  "battle styles booster box":          172,
-  "battle styles elite trainer box":    132,
-  "battle styles etb":                  132,
-  "battle styles booster pack":          11,
-  "battle styles tin":                   21,
-
-  "shining fates booster box":          240,
-  "shining fates elite trainer box":    112,
-  "shining fates etb":                  112,
-  "shining fates booster pack":          16,
-  "shining fates tin":                   29,
-  "shining fates mini tins":             27,
-
-  "vivid voltage booster box":          142,
-  "vivid voltage elite trainer box":     56,
-  "vivid voltage etb":                   56,
-  "vivid voltage booster pack":          10,
-  "vivid voltage tin":                   19,
-
-  "darkness ablaze booster box":        132,
-  "darkness ablaze elite trainer box":   52,
-  "darkness ablaze etb":                 52,
-  "darkness ablaze booster pack":         9.50,
-  "darkness ablaze tin":                 17,
-
-  "rebel clash booster box":            122,
-  "rebel clash elite trainer box":       48,
-  "rebel clash etb":                     48,
-  "rebel clash booster pack":             9,
-
-  "sword shield booster box":           195,
-  "sword shield booster pack":           10,
-
-  // ── SUN & MOON ERA ───────────────────────────────────────────────────
-  "hidden fates booster box":           385,
-  "hidden fates elite trainer box":     112,
-  "hidden fates etb":                   112,
-  "hidden fates booster pack":           14,
-  "hidden fates tin":                    44,
-  "hidden fates blister":                29,
-
-  "cosmic eclipse booster box":         335,
-  "cosmic eclipse booster pack":         12,
-
-  "champions path elite trainer box":   192,
-  "champions path etb":                 192,
-  "champions path booster pack":         24,
-
-  "unified minds booster box":          242,
-  "unified minds booster pack":          10,
-
-  "unbroken bonds booster box":         272,
-  "unbroken bonds booster pack":         11,
-
-  // ── TINS ─────────────────────────────────────────────────────────────
-  "surging sparks tin":                  22,
-  "prismatic evolutions tin":            28,
-  "stellar crown tin":                   19,
-  "journey together tin":                22,
-  "ascended heroes tin":                 26,
-  "destined rivals tin":                 24,
-  "twilight masquerade tin":             18,
-  "temporal forces tin":                 17,
-  "paradox rift tin":                    19,
-  "obsidian flames tin":                 19,
-  "paldean fates tin":                   21,
-  "151 tin":                             24,
-  "evolving skies tin":                  40,
-  "chilling reign tin":                  21,
-  "battle styles tin":                   21,
-  "brilliant stars tin":                 18,
-  "shining fates tin":                   29,
-  "hidden fates tin":                    44,
-  "charizard ex tin":                    32,
-  "mega charizard x ex tin":             32,
-  "mega charizard y ex tin":             32,
-  "mega charizard tin":                  32,
-  "ascended heroes mini tin":            20,
-  "destined rivals mini tin":            19,
-  "surging sparks mini tin":             18,
-  "journey together mini tin":           18,
-  "stellar crown mini tin":              17,
-  "ascended heroes tech sticker":        28,
-  "destined rivals tech sticker":        26,
-  "surging sparks tech sticker":         24,
-  "journey together tech sticker":       24,
-  "ascended heroes blister":             26,
-  "ascended heroes 2 pack blister":      26,
-  "destined rivals blister":             22,
-  "mega lucario ex league battle deck":  32,
-  "mega zygarde ex league battle deck":  30,
-  "ninetales ex league battle deck":     22,
-  "zapdos ex league battle deck":        22,
-  "mega charizard ultra premium collection": 195,
-  "mega charizard ultra-premium collection": 195,
-  "pikachu ex ultra premium collection": 145,
-  "mega venusaur ex premium collection": 52,
-  "mega blastoise ex premium collection": 52,
-
-  // ── PREMIUM COLLECTIONS ─────────────────────────────────────────────
-  "prismatic evolutions premium collection": 90,
-  "surging sparks premium collection":       36,
-  "stellar crown premium collection":        34,
-  "obsidian flames premium collection":      30,
-  "paradox rift premium collection":         30,
-  "evolving skies premium collection":       64,
-  "brilliant stars premium collection":      36,
-  "shining fates premium collection":        54,
-  "hidden fates premium collection":         72,
-
-  // ── BLISTERS ────────────────────────────────────────────────────────
-  "prismatic evolutions blister":        26,
-  "shining fates blister":               21,
-  "hidden fates blister":                29,
-  "evolving skies blister":              27,
-  "brilliant stars blister":             13,
-  "surging sparks blister":              12,
-  "journey together blister":            11,
-
-  // ── BUILD & BATTLE ────────────────────────────────────────────────────
-  "evolving skies build battle box":     64,
-  "chilling reign build battle box":     29,
-  "battle styles build battle box":      29,
-  "brilliant stars build battle box":    27,
-  "surging sparks build battle box":     23,
-  "journey together build battle box":   22,
-};
-
-// ─── HOLD DATA — investment potential per set ─────────────────────────────
-// holdScore: 1-10 (10 = strongest long-term investment)
-// trend: "rising" | "stable" | "declining"
-// yr1mult: estimated 12-month price multiplier
-const HOLD_DATA = {
-  "evolving skies":        { holdScore: 10, trend: "rising",   yr1mult: 1.20, note: "Umbreon VMAX — generational set" },
-  "hidden fates":          { holdScore:  9, trend: "rising",   yr1mult: 1.15, note: "Iconic Shiny Vault chase set" },
-  "prismatic evolutions":  { holdScore:  9, trend: "rising",   yr1mult: 1.25, note: "Eevee hype — next Evolving Skies" },
-  "shining fates":         { holdScore:  8, trend: "stable",   yr1mult: 1.10, note: "Shiny Charizard VMAX drives demand" },
-  "champions path":        { holdScore:  8, trend: "rising",   yr1mult: 1.15, note: "Low print run premium set" },
-  "cosmic eclipse":        { holdScore:  7, trend: "stable",   yr1mult: 1.08, note: "Last Sun & Moon set" },
-  "unified minds":         { holdScore:  6, trend: "stable",   yr1mult: 1.05, note: "Tag Team era favourite" },
-  "unbroken bonds":        { holdScore:  6, trend: "stable",   yr1mult: 1.05, note: "Strong tag team lineup" },
-  "phantasmal flames":     { holdScore:  7, trend: "rising",   yr1mult: 1.20, note: "Chase cards driving premium" },
-  "chaos rising":          { holdScore:  7, trend: "rising",   yr1mult: 1.15, note: "Brand new — early adopter window" },
-  "perfect order":         { holdScore:  7, trend: "rising",   yr1mult: 1.12, note: "Mega Zygarde ex chase card £230+" },
-  "151":                   { holdScore:  8, trend: "rising",   yr1mult: 1.15, note: "Nostalgia premium — fan favourite" },
-  "ascended heroes":       { holdScore:  6, trend: "rising",   yr1mult: 1.10, note: "ME01 — Mega Evo era hype" },
-  "paldean fates":         { holdScore:  6, trend: "stable",   yr1mult: 1.08, note: "Shiny vault set" },
-  "surging sparks":        { holdScore:  5, trend: "stable",   yr1mult: 1.05, note: "Pikachu ex appeal" },
-  "stellar crown":         { holdScore:  5, trend: "stable",   yr1mult: 1.04, note: "Solid modern set" },
-  "brilliant stars":       { holdScore:  5, trend: "stable",   yr1mult: 1.05, note: "Charizard VSTAR demand" },
-  "journey together":      { holdScore:  5, trend: "stable",   yr1mult: 1.03, note: "Recent release, settling" },
-  "destined rivals":       { holdScore:  5, trend: "stable",   yr1mult: 1.05, note: "ME02 — recent ME set" },
-  "twilight masquerade":   { holdScore:  4, trend: "stable",   yr1mult: 1.02, note: "Standard modern" },
-  "temporal forces":       { holdScore:  4, trend: "stable",   yr1mult: 1.02, note: "Standard modern" },
-  "paradox rift":          { holdScore:  4, trend: "declining", yr1mult: 0.98, note: "Higher supply, slow decline" },
-  "obsidian flames":       { holdScore:  4, trend: "declining", yr1mult: 0.98, note: "Charizard ex set — print heavy" },
-  "shrouded fable":        { holdScore:  4, trend: "stable",   yr1mult: 1.02, note: "Low-hype set" },
-  "crown zenith":          { holdScore:  4, trend: "stable",   yr1mult: 1.03, note: "Last SwSh release" },
-
-  // ── SV Base + older SV ──────────────────────────────────────────────────
-  "paldea evolved":        { holdScore:  3, trend: "declining", yr1mult: 0.95, note: "Oversupplied SV set" },
-  "scarlet violet":        { holdScore:  3, trend: "stable",    yr1mult: 1.00, note: "Base SV — functional set" },
-
-  // ── Sword & Shield era ───────────────────────────────────────────────────
-  "silver tempest":        { holdScore:  5, trend: "stable",    yr1mult: 1.05, note: "Lugia V alt art premium" },
-  "lost origin":           { holdScore:  4, trend: "stable",    yr1mult: 1.02, note: "Origin Forme demand" },
-  "astral radiance":       { holdScore:  3, trend: "stable",    yr1mult: 1.00, note: "Solid but common set" },
-  "fusion strike":         { holdScore:  4, trend: "stable",    yr1mult: 1.02, note: "Mew VMAX hype" },
-  "chilling reign":        { holdScore:  6, trend: "rising",    yr1mult: 1.08, note: "Ice/Shadow Rider — underrated" },
-  "battle styles":         { holdScore:  5, trend: "stable",    yr1mult: 1.05, note: "Urshifu demand — strong" },
-  "vivid voltage":         { holdScore:  4, trend: "stable",    yr1mult: 1.02, note: "Pikachu VMAX appeal" },
-  "darkness ablaze":       { holdScore:  5, trend: "stable",    yr1mult: 1.04, note: "Charizard VMAX — fan favourite" },
-  "rebel clash":           { holdScore:  3, trend: "stable",    yr1mult: 1.00, note: "Standard SwSh set" },
-  "sword shield":          { holdScore:  3, trend: "stable",    yr1mult: 1.00, note: "SwSh base — steady" },
-  "unbroken bonds":        { holdScore:  6, trend: "stable",    yr1mult: 1.05, note: "Strong tag team lineup" },
-};
-
-// ─── VALID ENGLISH POKEMON SETS ────────────────────────────────────────────
-const ENGLISH_SETS = [
-  // ── Mega Evolution era (2025-2026) ──
-  "ascended heroes", "destined rivals", "perfect order", "chaos rising",
-  "phantasmal flames", "mega evolution", "mega lucario", "mega zygarde",
-  "nihil zero", "black bolt", "white flare", "first partner",
-  // ── Scarlet & Violet ──
-  "journey together", "prismatic evolutions", "surging sparks", "stellar crown",
-  "shrouded fable", "twilight masquerade", "temporal forces", "paradox rift",
-  "obsidian flames", "paldea evolved", "paldean fates",
-  "scarlet & violet", "scarlet and violet", "scarlet violet",
-  "151", "sv1", "sv2", "sv3", "sv4", "sv5", "sv6", "sv7", "sv8", "sv9",
-  // ── Sword & Shield ──
-  "crown zenith", "silver tempest", "lost origin", "astral radiance",
-  "brilliant stars", "fusion strike", "evolving skies", "chilling reign",
-  "battle styles", "shining fates", "vivid voltage", "champions path",
-  "darkness ablaze", "rebel clash", "sword & shield", "sword and shield",
-  "swsh",
-  // ── Sun & Moon ──
-  "hidden fates", "cosmic eclipse", "unified minds", "unbroken bonds",
-  "team up", "lost thunder", "celestial storm", "forbidden light",
-  "ultra prism", "burning shadows", "guardians rising", "sun & moon",
-  "sun and moon", "shining legends", "dragon majesty",
-  // ── XY era ──
-  "evolutions", "steam siege", "fates collide", "breakpoint", "breakthrough",
-  "ancient origins", "roaring skies", "primal clash", "phantom forces",
-  "flashfire", "kalos starter", "double crisis", "generations",
-  "xy base", "xy", "pokemon xy",
-  // ── Black & White era ──
-  "legendary treasures", "plasma blast", "plasma freeze", "plasma storm",
-  "boundaries crossed", "dragons exalted", "dark explorers", "next destinies",
-  "noble victories", "emerging powers", "black & white", "black and white",
-  "dragon vault",
-  // ── HeartGold / SoulSilver era ──
-  "call of legends", "triumphant", "undaunted", "unleashed",
-  "heartgold soulsilver", "hgss",
-  // ── Platinum era ──
-  "arceus", "supreme victors", "rising rivals", "platinum base",
-  // ── Diamond & Pearl era ──
-  "stormfront", "legends awakened", "majestic dawn", "great encounters",
-  "secret wonders", "mysterious treasures", "diamond pearl", "dp",
-  // ── EX era ──
-  "power keepers", "dragon frontiers", "crystal guardians", "holon phantoms",
-  "emerald", "unseen forces", "delta species", "deoxys",
-  "team rocket returns", "firered leafgreen", "hidden legends",
-  "team magma vs team aqua", "ex sandstorm", "ex ruby sapphire", "ex dragon",
-  // ── WOTC era (Base Set through Skyridge) ──
-  "base set", "jungle", "fossil", "team rocket", "gym heroes", "gym challenge",
-  "neo genesis", "neo discovery", "neo revelation", "neo destiny",
-  "legendary collection", "expedition", "aquapolis", "skyridge",
-  "southern islands",
-  // ── Special / seasonal ──
-  "celebrations", "pokemon go", "trainers toolkit", "trainer toolkit",
-  "league battle deck", "ex league battle deck", "v battle deck",
-  "pokemon tcg",
-];
-
-// ─── SEALED PRODUCT TYPES ──────────────────────────────────────────────────
-// Every real product name pattern used by UK retailers
-const PRODUCT_TYPES = [
-  // ── Booster Boxes ──
-  "booster box", "half booster box", "half box", "display box",
-  "booster display",
-  // ── Elite Trainer Boxes ──
-  "elite trainer box", "etb",
-  // ── Booster Bundles & Packs ──
-  "booster bundle", "booster pack", "sleeved booster", "sleeve booster",
-  "booster packs",
-  // ── Blisters ──
-  "blister pack", "blister", "blisters",
-  "3 pack blister", "3-pack blister", "3pack blister",
-  "2 pack blister", "2-pack blister",
-  "check lane blister", "check lane",
-  // ── Tins ──
-  "collector tin", "poke ball tin", "pokeball tin",
-  "mini tin", "mini tins",
-  "tin",
-  // ── Collections & Boxes ──
-  "ultra premium collection", "upc",
-  "premium collection",
-  "special collection",
-  "figure collection",
-  "collection box",
-  "collection chest",
-  "collector chest",
-  // ── Poster & Sticker products ──
-  "poster collection", "poster box", "poster pack",
-  "sticker collection", "tech sticker collection", "sticker pack",
-  // ── Pin & Accessory Collections ──
-  "pin collection", "deluxe pin collection", "pin box",
-  "trading card collection",
-  // ── V/VSTAR/EX Collections ──
-  "v star collection", "vstar collection",
-  "v collection", "ex collection",
-  "gx collection",
-  // ── Collector Kits ──
-  "collector's kit", "collectors kit", "collector kit",
-  // ── Battle Decks & League Decks ──
-  "league battle deck", "v battle deck", "ex battle deck",
-  "battle deck",
-  // ── Build & Battle ──
-  "build and battle box", "build & battle box",
-  "build and battle stadium", "build & battle stadium",
-  "build and battle", "build & battle",
-  // ── Trainer Kits & Starter Sets ──
-  "trainer kit", "starter deck", "starter set",
-  "premier deck holder",
-  // ── Gift & Seasonal ──
-  "gift set", "gift box",
-  "treasure chest",
-  "advent calendar", "holiday calendar",
-  // ── Miscellaneous sealed ──
-  "booster bundle pack", "booster sleeve",
-];
-
-// ─── HARD BLOCK ────────────────────────────────────────────────────────────
-const BLOCK = [
-  // Non-English languages
-  "korean", "japanese", "simplified chinese", "traditional chinese", "chinese",
-  "gem pack", "sv3a", "sv4a", "sv5k", "sv6a",
-  "glory of team rocket", "ruler of the black flame",
-  "ninja spinner", "mega dream ex",
-  "terastal", "wild force", "cyber judge", "clay burst",
-  // Other card games — must be specific to avoid blocking Pokemon products
-  "yu-gi-oh", "yugioh", "magic the gathering", " mtg ", "digimon tcg",
-  "one piece card", "dragon ball super card", "disney lorcana", "lorcana",
-  "cardfight!!", "cardfight vanguard", "weiss schwarz", "buddyfight",
-  "flesh and blood", "union arena", "grand archive",
-  "star wars unlimited", "riftbound",
-  // Non-card merchandise
-  "funko", "plush", "soft toy", "stuffed",
-  "vinyl figure", "action figure", "figurine", "statue",
-  "playmat", "neoprene mat",
-  "toploader", "penny sleeve", "card sleeve",
-  "portfolio binder", "ring binder",
-  "dice set", "dice bag",
-  "keychain", "lanyard", "pin badge",
-  "metal charm", "enamel pin",
-  "t-shirt", "hoodie", "cap", "hat",
-  "backpack", "lunch box",
-  // Graded cards
-  "psa graded", "bgs graded", "cgc graded", "beckett graded",
-  "psa 10", "psa 9", "bgs 10", "cgc 10",
-  // Card lots / singles
-  "lot of", "100 cards", "bulk lot", "common lot",
-  "holo card", "reverse holo card", "full art card",
-  "proxy", "fake", "replica", "custom card",
-  // Cases / full displays
-  "booster box case", "etb case", "case of 6", "case of 12",
-  "sealed case", "display case",
-  // Other explicit blocks
-  "card lot", "mystery bundle cards", "panini", "topps", "bandai cards",
-  // Obsidia TCG uses lottery/raffle pricing — not real buyable prices
-  "obsidia-tcg", "obsidia tcg",
-  // Individual card condition words — any listing with these is a single card, not sealed
-  "near mint", "lightly played", "moderately played", "heavily played",
-  "light play", "near-mint", "nm/m", "nm ", " lp ", " mp ", " hp ",
-  "1st edition", "shadowless", "unlimited edition",
-  "reverse holo", "holo rare", "full art", "alt art", "special art",
-  // Card number patterns are handled in isValidProduct below
-  "common near", "uncommon near", "rare near", "uncommon reverse",
-  "dent / crease", "crease / mark", "heavy play",
-  // Evo Cards GVMS/VAT noise
-  "0% vat gvms", "20% vat", "gvms", "slightly damaged",
-];
-
-// ─── PRICE SANITY LIMITS PER PRODUCT TYPE ─────────────────────────────────
-const PRICE_LIMITS = {
-  "booster pack":               { min: 2,   max: 200  },
-  "booster box":                { min: 50,  max: 5000 },
-  "half box":                   { min: 30,  max: 2500 },
-  "half booster box":           { min: 30,  max: 2500 },
-  "elite trainer box":          { min: 25,  max: 500  },
-  "etb":                        { min: 25,  max: 500  },
-  "booster bundle":             { min: 12,  max: 250  },
-  "tin":                        { min: 10,  max: 200  },
-  "mini tin":                   { min: 6,   max: 60   },
-  "collector tin":              { min: 15,  max: 200  },
-  "blister":                    { min: 5,   max: 100  },
-  "check lane":                 { min: 4,   max: 40   },
-  "poster collection":          { min: 12,  max: 150  },
-  "poster box":                 { min: 12,  max: 150  },
-  "sticker collection":         { min: 8,   max: 80   },
-  "tech sticker collection":    { min: 8,   max: 80   },
-  "ultra premium collection":   { min: 60,  max: 600  },
-  "premium collection":         { min: 20,  max: 300  },
-  "special collection":         { min: 20,  max: 300  },
-  "figure collection":          { min: 15,  max: 200  },
-  "collection box":             { min: 20,  max: 300  },
-  "collection chest":           { min: 25,  max: 250  },
-  "collector chest":            { min: 25,  max: 250  },
-  "pin collection":             { min: 10,  max: 120  },
-  "battle deck":                { min: 8,   max: 80   },
-  "v battle deck":              { min: 10,  max: 100  },
-  "league battle deck":         { min: 15,  max: 150  },
-  "build and battle":           { min: 15,  max: 80   },
-  "build & battle":             { min: 15,  max: 80   },
-  "trainer kit":                { min: 10,  max: 60   },
-  "premier deck":               { min: 12,  max: 100  },
-  "gift set":                   { min: 20,  max: 250  },
-  "gift box":                   { min: 20,  max: 250  },
-  "advent":                     { min: 20,  max: 120  },
-  "default":                    { min: 5,   max: 1500 },
-};
-
-function getPriceLimits(title) {
-  const t = title.toLowerCase();
-  for (const [key, limits] of Object.entries(PRICE_LIMITS)) {
-    if (t.includes(key)) return limits;
-  }
-  return PRICE_LIMITS.default;
-}
-
-function isValidProduct(title, price) {
-  const t = title.toLowerCase();
-  const tn = normaliseTitle(title);
-  const blocked = BLOCK.find(k => t.includes(k));
-  if (blocked) return false;
-  // Block individual cards: titles with card numbers like "53/109", "008/198"
-  if (/\d{1,3}\/\d{2,3}/.test(t)) return false;
-  if (!PRODUCT_TYPES.some(k => tn.includes(normaliseTitle(k)))) return false;
-  if (!ENGLISH_SETS.some(s => tn.includes(normaliseTitle(s)))) return false;
-  const limits = getPriceLimits(title);
-  if (price < limits.min || price > limits.max) return false;
-  return true;
-}
-
-// Debug version — logs why a product fails (use temporarily)
-function debugProduct(title, price) {
-  const t = title.toLowerCase();
-  const tn = normaliseTitle(title);
-  const blocked = BLOCK.find(k => t.includes(k));
-  if (blocked) return `BLOCKED by "${blocked}"`;
-  if (!PRODUCT_TYPES.some(k => tn.includes(normaliseTitle(k)))) return `NO PRODUCT TYPE in: ${tn.slice(0,60)}`;
-  if (!ENGLISH_SETS.some(s => tn.includes(normaliseTitle(s)))) return `NO SET MATCH in: ${tn.slice(0,60)}`;
-  const limits = getPriceLimits(title);
-  if (price < limits.min || price > limits.max) return `PRICE £${price} outside [£${limits.min}-£${limits.max}]`;
-  return "VALID";
-}
-
-// Higher priority products always shown — packs only if profitable flip
-function getProductPriority(title) {
-  const t = title.toLowerCase();
-  if (t.includes("booster box") && !t.includes("half")) return "HIGH";
-  if (t.includes("half booster box") || t.includes("half box")) return "HIGH";
-  if (t.includes("elite trainer box") || t.includes("etb")) return "HIGH";
-  if (t.includes("booster bundle")) return "HIGH";
-  if (t.includes("ultra premium collection") || t.includes("upc")) return "HIGH";
-  if (t.includes("tin") || t.includes("collection box")) return "MEDIUM";
-  if (t.includes("blister") || t.includes("poster collection")) return "MEDIUM";
-  if (t.includes("booster pack")) return "LOW"; // Only send if profitable
-  return "MEDIUM";
-}
-
-function normaliseTitle(title) {
-  return title.toLowerCase()
-    .replace(/\s*[-–—:]\s*/g, " ")
-    .replace(/[&]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getRRP(title) {
-  const t = normaliseTitle(title);
-  const sorted = Object.entries(RRP).sort((a, b) => b[0].length - a[0].length);
-  for (const [k, v] of sorted) if (t.includes(normaliseTitle(k))) return v;
-  return null;
-}
-
-function getMarket(title) {
-  const t = normaliseTitle(title);
-  const sorted = Object.entries(MARKET).sort((a, b) => b[0].length - a[0].length);
-  for (const [k, v] of sorted) if (t.includes(normaliseTitle(k))) return v;
-  return null;
-}
-
-function getHoldData(title) {
-  const t = normaliseTitle(title);
-  for (const [set, data] of Object.entries(HOLD_DATA)) {
-    if (t.includes(normaliseTitle(set))) return data;
-  }
-  return null;
-}
-
-function getDealRating(buy, rrp, market) {
-  const vsMarket = market ? ((buy - market) / market) * 100 : null;
-  const flipProfit = market ? (market - buy - (market * 0.129 + 0.30) - 4.00) : null;
-  const flipRoi = (flipProfit !== null && buy > 0) ? (flipProfit / buy * 100) : null;
-
-  // Rating is purely based on flip profit potential vs eBay market
-  // RRP is irrelevant — what matters is can you make money
-  if (flipProfit !== null) {
-    if (flipRoi >= 25)  return { label: "🔥 HOT DEAL",        stars: "⭐⭐⭐⭐⭐" };
-    if (flipRoi >= 15)  return { label: "✅ BUY",             stars: "⭐⭐⭐⭐⭐" };
-    if (flipRoi >= 5)   return { label: "💰 FLIP",            stars: "⭐⭐⭐⭐" };
-    if (flipRoi >= 0)   return { label: "⚠️ WEAK",            stars: "⭐⭐⭐" };
-    if (flipRoi >= -10) return { label: "⚠️ WEAK",            stars: "⭐⭐" };
-    return               { label: "❌ AVOID",                 stars: "⭐" };
-  }
-
-  // No market data — fall back to vs market %
-  if (vsMarket !== null) {
-    if (vsMarket <= -20) return { label: "🔥 EXCEPTIONAL DEAL", stars: "⭐⭐⭐⭐⭐" };
-    if (vsMarket <= -10) return { label: "✅ GOOD DEAL",        stars: "⭐⭐⭐⭐" };
-    if (vsMarket <= 0)   return { label: "⚖️ AT MARKET",        stars: "⭐⭐⭐" };
-    if (vsMarket <= 20)  return { label: "⚠️ ABOVE MARKET",     stars: "⭐⭐" };
-    return                { label: "❌ NOT WORTH IT",           stars: "⭐" };
-  }
-
-  return { label: "📦 IN STOCK", stars: "" };
-}
-
-// ─── BROWSER-LIKE HEADERS ────────────────────────────────────────────────────
-const BROWSER_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Cache-Control": "no-cache",
-  "Pragma": "no-cache",
-  "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  "sec-ch-ua-mobile": "?0",
-  "sec-ch-ua-platform": '"Windows"',
-  "sec-fetch-dest": "document",
-  "sec-fetch-mode": "navigate",
-  "sec-fetch-site": "none",
-  "sec-fetch-user": "?1",
-  "upgrade-insecure-requests": "1",
-};
-
-const JSON_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/javascript, */*; q=0.01",
-  "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-  "Accept-Encoding": "gzip, deflate, br",
-  "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  "sec-ch-ua-mobile": "?0",
-  "sec-ch-ua-platform": '"Windows"',
-  "sec-fetch-dest": "empty",
-  "sec-fetch-mode": "cors",
-  "sec-fetch-site": "same-origin",
-  "x-requested-with": "XMLHttpRequest",
-};
-
-// ─── HTTP FETCH ───────────────────────────────────────────────────────────────
-const delay = ms => new Promise(r => setTimeout(r, ms));
-
-async function fetchPage(url, ms = 15000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        ...BROWSER_HEADERS,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://www.google.co.uk/",
-      },
+    const market = deal.resell || getMarket(deal.product) || 0;
+    const fvf = market * EF + FEE_FIXED;
+    const net = +(market - deal.buyNow - fvf - POST).toFixed(2);
+    const roi = deal.buyNow > 0 ? Math.round(net / deal.buyNow * 100) : 0;
+    const msg = `🔥 *ShinyDen Deal Alert*\n\n*${deal.product}*\n_${deal.retailer}_\n\n💰 Buy: £${deal.buyNow}\n📈 eBay: £${market}\n✅ Profit: +£${net} (+${roi}%)\n\n${deal.url}`;
+    await fetch(`https://api.telegram.org/bot${TELE_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TELE_CHAT, text: msg, parse_mode: "Markdown" }),
     });
-    clearTimeout(timer);
-    if (res.status === 429) { console.log(`    HTTP 429 — rate limited, will retry next scan`); return null; }
-    if (!res.ok) { console.log(`    HTTP ${res.status} — skipping`); return null; }
-    return await res.text();
-  } catch (e) {
-    clearTimeout(timer);
-    console.log(`    Error: ${e.message.slice(0, 80)}`);
-    return null;
-  }
+  } catch {}
 }
 
-async function fetchJson(url, ms = 15000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: JSON_HEADERS });
-    clearTimeout(timer);
-    if (res.status === 429) { console.log(`    HTTP 429 — rate limited, will retry next scan`); return null; }
-    if (!res.ok) { console.log(`    HTTP ${res.status} — skipping`); return null; }
-    return await res.json();
-  } catch (e) {
-    clearTimeout(timer);
-    console.log(`    Error: ${e.message.slice(0, 80)}`);
-    return null;
-  }
-}
+// ─── RETAILERS ─────────────────────────────────────────────────────────────────
+const retailers = [
+  { name:"Total Cards",        base:"https://www.totalcards.net",          type:"shopify-json",
+    collections:["/collections/pokemon-sealed-product","/collections/pokemon-booster-boxes","/collections/pokemon-elite-trainer-boxes","/collections/all-pokemon"] },
+  { name:"Titan Cards",        base:"https://www.titancards.co.uk",         type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon-booster-boxes","/collections/pokemon","/collections/all"] },
+  { name:"Eterna Cards",       base:"https://www.eternacards.co.uk",        type:"shopify-json",
+    collections:["/collections/pokemon","/collections/sealed-product","/collections/all"] },
+  { name:"Chaos Cards",        base:"https://www.chaoscards.co.uk",         type:"shopify-json",
+    collections:["/collections/pokemon","/collections/tcg-pokemon","/collections/pokemon-booster-boxes"] },
+  { name:"Double Sleeved",     base:"https://www.doublesleeved.co.uk",      type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon","/collections/all"] },
+  { name:"Toys N Geek",        base:"https://www.toysngeek.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon","/collections/all"] },
+  { name:"My TCG",             base:"https://www.mytcg.co.uk",              type:"shopify-json",
+    collections:["/collections/pokemon-sealed-product","/collections/pokemon","/collections/all"] },
+  { name:"Gathering Games",    base:"https://www.gatheringgames.co.uk",     type:"shopify-json",
+    collections:["/collections/pokemon","/collections/sealed","/collections/all"] },
+  { name:"Leisure Games",      base:"https://www.leisuregames.com",         type:"shopify-json",
+    collections:["/collections/pokemon","/collections/trading-card-games","/collections/all"] },
+  { name:"Emerald Collectables",base:"https://www.emeraldcollectables.co.uk",type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/all"] },
+  { name:"Zatu Games",         base:"https://www.zatugames.com",            type:"shopify-json",
+    collections:["/collections/pokemon-sealed-product","/collections/pokemon","/collections/all"] },
+  { name:"Big Orbit Cards",    base:"https://www.bigorbitsports.co.uk",     type:"shopify-json",
+    collections:["/collections/pokemon","/collections/sealed-products","/collections/all"] },
+  { name:"Minted TCG",         base:"https://www.mintedtcg.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon","/collections/all"] },
+  { name:"Evo Cards",          base:"https://www.evo.cards",               type:"shopify-json",
+    collections:["/collections/pokemon-sealed-products","/collections/pokemon","/collections/all"] },
+  { name:"Buy Any Cards",      base:"https://www.buyanycards.com",          type:"shopify-json",
+    collections:["/collections/pokemon","/collections/sealed","/collections/all"] },
+  { name:"TCG Shop UK",        base:"https://www.tcgshopuk.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"Goblin Gaming",      base:"https://www.goblingaming.co.uk",       type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"Magic Madhouse",     base:"https://www.magicmadhouse.co.uk",      type:"shopify-json",
+    collections:["/collections/pokemon","/collections/pokemon-booster","/collections/all"] },
+  { name:"Ace Comics",         base:"https://www.acecomics.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"Dice & Cards",       base:"https://www.diceandcards.co.uk",       type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"Mana Gaming",        base:"https://www.managingtcg.co.uk",        type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"Card Merchant",      base:"https://www.cardmerchant.co.uk",       type:"shopify-json",
+    collections:["/collections/pokemon","/collections/all"] },
+  { name:"PACKRAT",            base:"https://packrat.co.uk",                type:"shopify-json",
+    collections:["/collections/all","/collections/pokemon","/collections/trading-card-games"] },
+  { name:"Smyths",             base:"https://www.smythstoys.com",           type:"html-parse",
+    url:"https://www.smythstoys.com/uk/en-gb/trading-cards/pokemon/c/6010" },
+  { name:"Amazon UK",          base:"https://www.amazon.co.uk",            type:"skip" },
+  { name:"Pokemon Center UK",  base:"https://www.pokemoncenter.com",        type:"shopify-json",
+    collections:["/collections/trading-card-game-sealed","/collections/cards","/collections/all"] },
+];
 
-// ─── SHOPIFY PRODUCTS JSON API ────────────────────────────────────────────────
-async function fetchShopifyProducts(baseUrl, customCollections) {
-  const seen = new Set();
-  const items = [];
+// ─── SCRAPE A SINGLE RETAILER ──────────────────────────────────────────────────
+async function scrapeRetailer(retailer) {
+  if (retailer.type === "skip") return [];
+  const found = [];
 
-  // Use retailer-specific collections if provided, otherwise try defaults
-  const collectionPaths = customCollections || [
-    "/collections/pokemon-tcg",
-    "/collections/pokemon-sealed-products",
-    "/collections/pokemon-sealed",
-    "/collections/pokemon",
-    "/collections/all",
-    "",  // products.json root
-  ];
+  for (const col of (retailer.collections || [])) {
+    let page = 1;
+    while (true) {
+      try {
+        const url = `${retailer.base}${col}.json?limit=250&page=${page}`;
+        const res = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; ShinyDen/1.0)", "Accept": "application/json" },
+          timeout: 12000,
+        });
 
-  const endpoints = collectionPaths.map(path =>
-    path ? `${baseUrl}${path}/products.json` : `${baseUrl}/products.json`
-  );
-
-  let workingEndpoint = null;
-  for (const ep of endpoints) {
-    const probe = await fetchJson(`${ep}?limit=1&page=1`);
-    if (probe && Array.isArray(probe.products) && probe.products.length > 0) {
-      workingEndpoint = ep;
-      break;
-    }
-  }
-  if (!workingEndpoint) { console.log(`    No working endpoint found`); return items; }
-
-  for (let page = 1; page <= 5; page++) {
-    const url = `${workingEndpoint}?limit=250&page=${page}`;
-    const data = await fetchJson(url);
-    if (!data || !Array.isArray(data.products) || data.products.length === 0) break;
-
-    for (const product of data.products) {
-      const title = product.title;
-      if (!title) continue;
-
-      // Only include variants explicitly marked available AND have stock
-      const variant = (product.variants || []).find(v =>
-        v.available === true &&
-        parseFloat(v.price) > 0 &&
-        (v.inventory_quantity === undefined || v.inventory_quantity > 0)
-      );
-      if (!variant) continue;
-
-      const price = parseFloat(variant.price);
-      if (!price || price <= 0) continue;
-
-      const productUrl = `${baseUrl}/products/${product.handle}`;
-      let image = "";
-      if (product.images && product.images[0]) {
-        const src = product.images[0].src || "";
-        image = src.startsWith("//") ? `https:${src}` : src;
-      }
-
-      const key = `${title.toLowerCase()}::${Math.round(price)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        items.push({ title, price, url: productUrl, image });
-      }
-    }
-
-    if (data.products.length < 250) break;
-    await delay(1200);
-  }
-  return items;
-}
-
-// ─── HTML PARSER fallback ─────────────────────────────────────────────────────
-function parseShopifyHtml(html, baseUrl) {
-  const $ = cheerio.load(html);
-  const seen = new Set();
-  const items = [];
-
-  const containers = [
-    ".product-item", ".product-card", ".grid__item",
-    ".card-wrapper", ".productitem", ".collection-product-card",
-    "[data-product-id]", "li.product-item",
-  ];
-
-  for (const sel of containers) {
-    if ($(sel).length === 0) continue;
-
-    $(sel).each((_, el) => {
-      let title = "";
-      const titleSelectors = [
-        ".card__heading a", ".product-item__title a", ".productitem--title a",
-        ".product-title a", ".product-card__title a",
-        ".card__heading", ".product-item__title", ".productitem--title",
-        "h2 a", "h3 a", "h4 a", "h2", "h3", "h4",
-      ];
-      for (const ts of titleSelectors) {
-        const text = $(el).find(ts).first().text().trim();
-        if (text && text.length > 4 && !text.includes("<") && !text.includes("src=")) {
-          title = text;
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 404) {
+            console.log(`     HTTP ${res.status} — skipping`);
+            break;
+          }
           break;
         }
-      }
-      if (!title) return;
 
-      const rawText = $(el).text();
-      const priceMatch = rawText.match(/£\s*([\d,]+\.?\d{0,2})/);
-      if (!priceMatch) return;
-      const price = parseFloat(priceMatch[1].replace(/,/g, ""));
-      if (!price || price <= 0) return;
+        const text = res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { console.log(`     Error: Unexpected token '${text[0]}'...`); break; }
 
-      let imageUrl = "";
-      const img = $(el).find("img").first();
-      const src = img.attr("src") || img.attr("data-src") || img.attr("data-srcset") || "";
-      if (src) {
-        const cleanSrc = src.split(" ")[0];
-        imageUrl = cleanSrc.startsWith("//") ? `https:${cleanSrc}` :
-                   cleanSrc.startsWith("http") ? cleanSrc : `${baseUrl}${cleanSrc}`;
-      }
+        const products = data.products || data.items || [];
+        if (!products.length) break;
 
-      const lower = rawText.toLowerCase();
-      const soldOut = lower.includes("sold out") || lower.includes("out of stock") ||
-        $(el).find(".sold-out, [class*='sold-out']").length > 0;
-      if (soldOut) return;
-
-      const link = $(el).find("a[href*='/products/']").first().attr("href") ||
-                   $(el).find("a[href]").first().attr("href");
-      if (!link) return;
-      const productUrl = link.startsWith("http") ? link : `${baseUrl}${link}`;
-
-      const key = `${title.toLowerCase()}::${Math.round(price)}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        items.push({ title, price, url: productUrl, image: imageUrl });
-      }
-    });
-
-    if (items.length > 0) break;
-  }
-
-  // Amazon-specific parser
-  if (items.length === 0 && baseUrl.includes("amazon")) {
-    $("[data-component-type='s-search-result']").each((_, el) => {
-      const title = $(el).find("h2 a span").first().text().trim();
-      const priceWhole = $(el).find(".a-price-whole").first().text().trim();
-      const priceFrac = $(el).find(".a-price-fraction").first().text().trim();
-      const price = parseFloat(`${priceWhole.replace(/,/g, "")}.${priceFrac || "00"}`);
-      const link = $(el).find("h2 a").first().attr("href");
-      const soldOut = $(el).text().toLowerCase().includes("currently unavailable");
-      const imageUrl = $(el).find("img.s-image").first().attr("src") || "";
-      if (title && !soldOut && price > 0 && link) {
-        const url = link.startsWith("http") ? link : `https://www.amazon.co.uk${link}`;
-        const key = `${title.toLowerCase()}::${Math.round(price)}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          items.push({ title, price, url, image: imageUrl });
+        for (const p of products) {
+          const title = p.title || p.name || "";
+          const variants = p.variants || p.options || [p];
+          for (const v of variants) {
+            const price = parseFloat(v.price || v.retail_price || 0);
+            if (!isValidProduct(title, price)) continue;
+            const url2 = v.url || (p.handle ? `${retailer.base}/products/${p.handle}` : retailer.url || "");
+            const image = p.images?.[0]?.src || p.image?.src || null;
+            found.push({ title: title.trim(), price, url: url2, image, retailer: retailer.name });
+          }
         }
+
+        if (products.length < 250) break;
+        page++;
+        await delay(300);
+      } catch (e) {
+        console.log(`     Error: ${e.message}`);
+        break;
       }
-    });
-  }
-
-  return items;
-}
-
-// ─── SEARCH TERMS ─────────────────────────────────────────────────────────────
-const CORE_SEARCHES = [
-  "pokemon+booster+box", "pokemon+elite+trainer+box", "pokemon+booster+bundle",
-  "pokemon+booster+pack", "pokemon+half+booster+box", "pokemon+tin",
-  "pokemon+collection+box", "pokemon+poster+collection", "pokemon+blister",
-  "pokemon+ascended+heroes", "pokemon+destined+rivals", "pokemon+perfect+order",
-  "pokemon+chaos+rising", "pokemon+phantasmal+flames", "pokemon+journey+together",
-  "pokemon+prismatic+evolutions", "pokemon+surging+sparks", "pokemon+stellar+crown",
-  "pokemon+shrouded+fable", "pokemon+twilight+masquerade", "pokemon+temporal+forces",
-  "pokemon+paradox+rift", "pokemon+obsidian+flames", "pokemon+151",
-  "pokemon+paldean+fates", "pokemon+crown+zenith", "pokemon+silver+tempest",
-  "pokemon+lost+origin", "pokemon+brilliant+stars", "pokemon+fusion+strike",
-  "pokemon+evolving+skies", "pokemon+chilling+reign", "pokemon+battle+styles",
-  "pokemon+shining+fates", "pokemon+vivid+voltage", "pokemon+hidden+fates",
-  "pokemon+cosmic+eclipse",
-];
-
-// ─── RETAILERS ───────────────────────────────────────────────────────────────
-const RETAILERS = [
-  // ── SPECIALIST POKEMON/TCG RETAILERS ────────────────────────────────────────
-  {
-    name: "Total Cards", base: "https://totalcards.net", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-scarlet-violet",
-      "/collections/pokemon-sword-shield",
-      "/collections/pokemon-sun-moon",
-      "/collections/pokemon-booster-boxes",
-      "/collections/pokemon-elite-trainer-boxes",
-      "/collections/pokemon-sealed-product",
-      "/collections/pokemon-tcg",
-      "/collections/pokemon",
-    ],
-  },
-  { name: "Titan Cards",       base: "https://titancards.co.uk",          type: "shopify-json" },
-  {
-    name: "Eterna Cards", base: "https://eternacards.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-booster-boxes",
-      "/collections/pokemon-elite-trainer-boxes",
-      "/collections/pokemon-half-boxes",
-      "/collections/pokemon-tcg-sealed-products",
-      "/collections/pokemon-sealed",
-      "/collections/pokemon",
-    ],
-  },
-  {
-    name: "Chaos Cards", base: "https://www.chaoscards.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon",
-      "/collections/tcg-pokemon",
-      "/collections/pokemon-elite-trainer-boxes",
-      "/collections/pokemon-tcg",
-      "/collections/pokemon",
-    ],
-  },
-  { name: "Double Sleeved",    base: "https://doublesleeved.co.uk",       type: "shopify-json" },
-  {
-    name: "Toys N Geek", base: "https://www.toysngeek.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "The Card Vault", base: "https://thecardvault.co.uk", type: "shopify-json",
-    collections: [
-      "/collections/pokemon-sealed-products",
-      "/collections/pokemon-booster-boxes",
-      "/collections/pokemon-tcg",
-      "/collections/pokemon",
-    ],
-  },
-  { name: "My TCG",            base: "https://mytcg.co.uk",               type: "shopify-json" },
-  { name: "Gathering Games",   base: "https://gatheringgames.co.uk",      type: "shopify-json" },
-  {
-    name: "Leisure Games", base: "https://www.leisuregames.com", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-tcg", "/collections/pokemon"],
-  },
-  {
-    name: "Emerald Collectables", base: "https://emeraldcollectables.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon-tcg", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "Zatu Games", base: "https://www.board-game.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-tcg", "/collections/pokemon-sealed", "/collections/pokemon"],
-  },
-  {
-    name: "Big Orbit Cards", base: "https://www.bigorbitcards.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed-products", "/collections/pokemon-booster-boxes", "/collections/pokemon"],
-  },
-  // ── NEWLY ADDED RETAILERS ───────────────────────────────────────────────────
-  {
-    name: "Minted TCG", base: "https://mintedtcg.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "Evo Cards", base: "https://evocards.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
-  },
-
-  {
-    name: "Buy Any Cards", base: "https://buyanycards.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-booster-boxes", "/collections/pokemon-elite-trainer-boxes", "/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "TCG Shop UK", base: "https://tcgshopuk.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "Goblin Gaming", base: "https://goblinslair.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
-  },
-  {
-    name: "Magic Madhouse", base: "https://www.magicmadhouse.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "Ace Comics", base: "https://www.acecomics.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
-  },
-  {
-    name: "Dice & Cards", base: "https://diceandcards.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
-  },
-  {
-    name: "Mana Gaming", base: "https://managingedge.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon", "/collections/all"],
-  },
-  {
-    name: "Card Merchant", base: "https://thecardmerchant.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon", "/collections/pokemon-sealed", "/collections/all"],
-  },
-  {
-    name: "PACKRAT", base: "https://packrat.co.uk", type: "shopify-json",
-    collections: ["/collections/pokemon-sealed", "/collections/pokemon-booster-boxes", "/collections/pokemon-tcg", "/collections/pokemon", "/collections/all"],
-  },
-  // ── LARGE GENERAL RETAILERS ──────────────────────────────────────────────────
-  {
-    name: "Smyths", base: "https://www.smythstoys.com", type: "html",
-    urls: [
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+box",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+elite+trainer+box",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+tin",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+booster+bundle",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+ascended+heroes",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+destined+rivals",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+surging+sparks",
-      "https://www.smythstoys.com/uk/en-gb/search/?text=pokemon+prismatic+evolutions",
-    ],
-  },
-  {
-    name: "Amazon UK", base: "https://www.amazon.co.uk", type: "html",
-    urls: [
-      "https://www.amazon.co.uk/s?k=pokemon+booster+box+english&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+elite+trainer+box+english&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+ascended+heroes&rh=p_85%3A1",
-      "https://www.amazon.co.uk/s?k=pokemon+destined+rivals&rh=p_85%3A1",
-    ],
-  },
-  {
-    name: "Pokemon Center UK", base: "https://www.pokemoncenter.com", type: "html",
-    urls: [
-      "https://www.pokemoncenter.com/en-gb/category/booster-boxes",
-      "https://www.pokemoncenter.com/en-gb/category/elite-trainer-boxes",
-      "https://www.pokemoncenter.com/en-gb/category/booster-packs",
-      "https://www.pokemoncenter.com/en-gb/category/tins",
-      "https://www.pokemoncenter.com/en-gb/category/collections",
-      "https://www.pokemoncenter.com/en-gb/category/booster-bundles",
-    ],
-  },
-];
-
-// Tracks last seen price per product — enables price drop alerts
-// key = "RetailerName::product title lowercase"
-// value = { price, firstSeen (timestamp) }
-const seenPrices = new Map();
-
-// ─── TELEGRAM ─────────────────────────────────────────────────────────────────
-async function sendPhoto(imageUrl, caption) {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: imageUrl, caption, parse_mode: "HTML" }),
-    });
-    const d = await res.json();
-    if (d.ok) { console.log("    📸 Photo sent!"); return true; }
-    console.log("    ⚠️ Photo failed:", d.description);
-    return false;
-  } catch (e) {
-    console.log("    ⚠️ Photo error:", e.message);
-    return false;
-  }
-}
-
-async function sendMessage(text) {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML", disable_web_page_preview: false }),
-    });
-    const d = await res.json();
-    if (d.ok) console.log("    📱 Message sent!");
-    else console.log("    ❌ Message error:", d.description);
-  } catch (e) {
-    console.log("    ❌ Message error:", e.message);
-  }
-}
-
-// ─── BUILD ALERT MESSAGE ──────────────────────────────────────────────────────
-function buildAlert(f) {
-  const rrp    = getRRP(f.title);
-  const market = getMarket(f.title);
-  const hold   = getHoldData(f.title);
-  const { label, stars } = getDealRating(f.price, rrp, market);
-  const t = f.title.toLowerCase();
-
-  const vsMarket = (market > 0) ? ((f.price - market) / market * 100) : null;
-  const vsRrp    = (rrp > 0)    ? ((f.price - rrp)    / rrp    * 100) : null;
-  const ebayFee  = market ? +(market * 0.129 + 0.30).toFixed(2) : null;
-  const postage  = 4.00;
-  const flipNet  = market ? +(market - f.price - ebayFee - postage).toFixed(2) : null;
-  const flipRoi  = (flipNet !== null && f.price > 0) ? Math.round(flipNet / f.price * 100) : null;
-
-  let perPack = null;
-  if (t.includes("booster box") && !t.includes("half")) perPack = +(f.price / 36).toFixed(2);
-  else if (t.includes("half")) perPack = +(f.price / 18).toFixed(2);
-  else if (t.includes("booster bundle")) perPack = +(f.price / 6).toFixed(2);
-
-  const p = n => n != null ? `£${(+n).toFixed(2)}` : "—";
-  const pct = n => n != null ? `${n > 0 ? "+" : ""}${Math.round(n)}%` : "";
-
-  // ── VERDICT ── the single most important line ──────────────────────────────
-  function verdict() {
-    if (flipNet !== null) {
-      if (flipRoi >= 25) return `🔥 STRONG BUY — ${flipRoi}% ROI, flip for +${p(flipNet)} profit`;
-      if (flipRoi >= 15) return `✅ BUY — Solid flip: +${p(flipNet)} profit (${flipRoi}% ROI)`;
-      if (flipRoi >= 8)  return `✅ BUY — Profitable flip: +${p(flipNet)} after fees`;
-      if (flipRoi >= 2)  return `⚖️ MARGINAL — Tiny flip profit: +${p(flipNet)}. Buy to keep only`;
-      if (flipRoi >= -5) return `⚠️ SLIGHT LOSS — −${p(Math.abs(flipNet))} if flipped. Hold potential only`;
-      return                    `❌ AVOID — Flip loss of ${p(Math.abs(flipNet))} after eBay fees`;
     }
-    if (vsRrp !== null) {
-      if (vsRrp <= -20) return `✅ BUY — ${Math.abs(Math.round(vsRrp))}% below RRP, strong value`;
-      if (vsRrp <=   0) return `⚖️ CONSIDER — At or below RRP`;
-      if (vsRrp <=  30) return `⚠️ ABOVE RRP — Check eBay before buying`;
-      return                   `❌ AVOID — Significantly above RRP`;
-    }
-    return `📦 IN STOCK — No eBay data available`;
   }
-
-  const lines = [];
-
-  // ── HEADER ──
-  if (f.isPriceDrop && f.oldPrice) {
-    lines.push(`🔻 PRICE DROP  Was ${p(f.oldPrice)} → Now ${p(f.price)}`);
-  }
-  lines.push(`${label}  ${stars}`);
-  lines.push(``);
-  lines.push(`<b>${f.title}</b>`);
-  lines.push(`🏪 ${f.retailer}`);
-  lines.push(``);
-
-  // ── PRICE COMPARISON ──
-  lines.push(`💰 Buy Now:   <b>${p(f.price)}</b>`);
-  if (rrp)    lines.push(`📊 RRP:       ${p(rrp)}   ${vsRrp != null ? `(${pct(vsRrp)})` : ""}`);
-  if (market) lines.push(`📈 eBay Sold: ${p(market)}  ${vsMarket != null ? `(${pct(vsMarket)})` : ""}`);
-  if (perPack) lines.push(`🃏 Per pack:  ${p(perPack)}`);
-
-  // ── FLIP CALCULATOR ──
-  if (flipNet !== null) {
-    lines.push(``);
-    lines.push(flipNet >= 0
-      ? `💸 Flip:  <b>+${p(flipNet)} profit  (${flipRoi}% ROI) ✅</b>`
-      : `💸 Flip:  <b>−${p(Math.abs(flipNet))} loss  (${flipRoi}% ROI) ❌</b>`
-    );
-    lines.push(`   Sell ${p(market)} − eBay ${p(ebayFee)} − post ${p(postage)}`);
-  }
-
-  // ── HOLD ANALYSIS ──
-  if (hold) {
-    const yr1 = market ? market * hold.yr1mult : null;
-    const trend = hold.trend === "rising" ? "↗️" : hold.trend === "declining" ? "↘️" : "→";
-    lines.push(``);
-    lines.push(`📦 Hold: ${trend} ${hold.trend}  ·  Score ${hold.holdScore}/10`);
-    if (yr1) lines.push(`   Est. 12mo: ${p(Math.round(yr1 * 0.9))}–${p(Math.round(yr1 * 1.1))}`);
-    lines.push(`   ${hold.note}`);
-  }
-
-  // ── VERDICT — bold, unmissable ──
-  lines.push(``);
-  lines.push(`━━━━━━━━━━━━━━━━━━`);
-  lines.push(`🏆 <b>${verdict()}</b>`);
-  lines.push(`━━━━━━━━━━━━━━━━━━`);
-  lines.push(`<a href="${f.url}">👉 BUY NOW →</a>`);
-
-  return lines.join("\n");
+  return found;
 }
 
-async function sendAlert(f) {
-  const caption = buildAlert(f);
-
-  // Telegram photo captions are capped at 1024 chars — use message if longer
-  if (f.image && f.image.startsWith("http") && caption.length <= 1020) {
-    const sent = await sendPhoto(f.image, caption);
-    if (!sent) await sendMessage(caption);
-  } else if (f.image && f.image.startsWith("http")) {
-    // Send photo then full stats as a separate message
-    const shortCaption = buildShortCaption(f);
-    const sent = await sendPhoto(f.image, shortCaption);
-    if (sent) await sendMessage(caption);
-    else await sendMessage(caption);
-  } else {
-    await sendMessage(caption);
-  }
-}
-
-function buildShortCaption(f) {
-  const rrp    = getRRP(f.title);
-  const market = getMarket(f.title);
-  const { label, stars } = getDealRating(f.price, rrp, market);
-  const vsMarket = market ? Math.round((f.price - market) / market * 100) : null;
-  const vsRrp    = rrp    ? Math.round((f.price - rrp)    / rrp    * 100) : null;
-  const fmt = n => n.toFixed(2);
-  const lines = [
-    `${label} ${stars}`,
-    ``,
-    `<b>${f.title}</b>`,
-    `🏪 <b>${f.retailer}</b>`,
-    ``,
-    `💰 £${fmt(f.price)}`,
-  ];
-  if (rrp)    lines.push(`📊 RRP £${fmt(rrp)} (${vsRrp > 0 ? "+" : ""}${vsRrp}%)`);
-  if (market) lines.push(`📈 eBay £${fmt(market)} (${vsMarket > 0 ? "+" : ""}${vsMarket}%)`);
-  lines.push(``, `<a href="${f.url}">👉 BUY NOW →</a>`);
-  return lines.join("\n");
-}
-
-// ─── MAIN SCAN ────────────────────────────────────────────────────────────────
+// ─── MAIN SCAN ─────────────────────────────────────────────────────────────────
 async function runScan() {
-  console.log(`\n🔍 ${RETAILERS.length} retailers · ${new Date().toLocaleTimeString("en-GB")}`);
+  console.log(`\n🔍 ${retailers.filter(r=>r.type!=="skip").length} retailers · ${new Date().toISOString().slice(11,19)}`);
+
+  // Get eBay token
+  const token = await getEbayToken();
+  ebayToken = token;
+  if (token) console.log("  📡 eBay Browse API ready");
+
+  const seenPrices = new Map(); // retailer::title → last known price
   const findings = [];
 
-  // ── PHASE 1: Acquire eBay OAuth token for Browse API ──────────────────────
-  const ebayToken = await getEbayToken();
-  if (ebayToken) console.log("  📡 eBay Browse API ready");
-  else console.log("  ⚠️  eBay Browse API unavailable — sold price lookup still works via Finding API");
-
-  for (const retailer of RETAILERS) {
+  for (const retailer of retailers) {
+    if (retailer.type === "skip") continue;
     console.log(`  → ${retailer.name}`);
-
-    if (retailer.type === "shopify-json") {
-      const items = await fetchShopifyProducts(retailer.base, retailer.collections);
+    try {
+      const items = await scrapeRetailer(retailer);
       console.log(`    ${items.length} products fetched`);
 
-      let debugCount = 0;
       for (const item of items) {
-        if (!isValidProduct(item.title, item.price)) {
-          if (debugCount < 3) {
-            console.log(`    ❌ ${debugProduct(item.title, item.price)}: "${item.title}" £${item.price}`);
-            debugCount++;
-          }
-          continue;
-        }
-
-        // Show ALL valid products — verdict in the message tells user if worth buying
         const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
-        const seen = seenPrices.get(key);
-        if (!seen) {
-          seenPrices.set(key, { price: item.price, firstSeen: Date.now() });
-          findings.push({ ...item, retailer: retailer.name });
+        const old = seenPrices.get(key);
+        const isNew = !old;
+        const isPriceDrop = old && item.price < old.price * 0.95;
+
+        if (isNew || isPriceDrop) {
           console.log(`    🟢 "${item.title}" £${item.price}`);
-        } else if (item.price < seen.price * 0.95) {
-          const oldPrice = seen.price;
-          seenPrices.set(key, { price: item.price, firstSeen: seen.firstSeen });
-          findings.push({ ...item, retailer: retailer.name, isPriceDrop: true, oldPrice });
-          console.log(`    🔻 DROP "${item.title}" £${oldPrice} → £${item.price}`);
+          findings.push({ ...item, isPriceDrop, oldPrice: old?.price || null });
+          seenPrices.set(key, { price: item.price });
         }
       }
-
-      await delay(2000 + Math.random() * 1000);
-    } else {
-      for (const url of (retailer.urls || [])) {
-        await delay(2000 + Math.random() * 1500);
-        const html = await fetchPage(url);
-        if (!html) continue;
-
-        const items = parseShopifyHtml(html, retailer.base);
-        const term = url.split("=").pop() || url;
-        if (items.length > 0) console.log(`    [${term}] ${items.length} items`);
-
-        for (const item of items) {
-          if (!isValidProduct(item.title, item.price)) continue;
-
-          // Show ALL valid products — verdict tells user if worth buying
-          const key = `${retailer.name}::${item.title.toLowerCase().trim()}`;
-          const seen = seenPrices.get(key);
-          if (!seen) {
-            seenPrices.set(key, { price: item.price, firstSeen: Date.now() });
-            findings.push({ ...item, retailer: retailer.name });
-            console.log(`    🟢 "${item.title}" £${item.price}`);
-          } else if (item.price < seen.price * 0.95) {
-            const oldPrice = seen.price;
-            seenPrices.set(key, { price: item.price, firstSeen: seen.firstSeen });
-            findings.push({ ...item, retailer: retailer.name, isPriceDrop: true, oldPrice });
-            console.log(`    🔻 DROP "${item.title}" £${oldPrice} → £${item.price}`);
-          }
-        }
-      }
+    } catch (e) {
+      console.log(`    Error: ${e.message}`);
     }
+    await delay(800);
   }
 
   console.log(`\n📊 ${findings.length} new confirmed deals`);
 
-  // Only send Telegram alerts for genuinely good deals
-  // S grade = ROI ≥ 25%, A grade = ROI ≥ 15%, or strong hold score ≥ 8
+  // Alert on genuinely good deals
   const alertWorthy = findings.filter(f => {
     const market = getMarket(f.title);
-    const hold = getHoldData(f.title);
-    if (!market) return (hold && hold.holdScore >= 9); // no price data but exceptional hold
-    const net = market - f.price - (market * 0.129 + 0.30) - 4;
+    if (!market) return false;
+    const fvf = market * EF + FEE_FIXED;
+    const net = market - f.price - fvf - POST;
     const roi = Math.round((net / f.price) * 100);
-    // Alert on: good flip ROI OR strong hold with acceptable loss
-    return roi >= 15 || (hold && hold.holdScore >= 8 && roi > -10);
-    // Note: once eBay data flows through, dealScore will also gate alerts here
+    return roi >= 15;
   });
 
-  console.log(`📣 ${alertWorthy.length} alert-worthy deals (ROI ≥ 15% or strong hold)`);
-
+  console.log(`📣 ${alertWorthy.length} alert-worthy deals (ROI ≥ 15%)`);
   for (const f of alertWorthy) {
     await sendAlert(f);
     await delay(1200);
   }
 
-  if (findings.length === 0) console.log("  ⬜ Nothing new this scan.");
-  return { findings: findings.map(f => ({ ...f, store: f.retailer })), ebayToken };
+  if (!findings.length) console.log("  ⬛ Nothing new this scan.");
+  return findings;
 }
 
-// ─── SAVE DEALS TO GITHUB ─────────────────────────────────────────────────────
-const GH_TOKEN = process.env.GH_TOKEN;
-const GH_REPO = "lock3yv1/lock3ys-den";
-
-async function saveDealsToGitHub(deals, holdData) {
-  if (!GH_TOKEN) { console.log("⚠️ No GH_TOKEN — skipping deals.json"); return; }
-  try {
-    let sha;
-    try {
-      const existing = await fetch(
-        `https://api.github.com/repos/${GH_REPO}/contents/deals.json`,
-        { headers: { Authorization: `token ${GH_TOKEN}`, "User-Agent": "pokescraper" } }
-      );
-      if (existing.ok) sha = (await existing.json()).sha;
-    } catch {}
-
-    const payload = holdData ? { deals, holdData, updatedAt: new Date().toISOString() } : deals;
-  const content = Buffer.from(JSON.stringify(payload, null, 2)).toString("base64");
-    const res = await fetch(
-      `https://api.github.com/repos/${GH_REPO}/contents/deals.json`,
-      {
-        method: "PUT",
-        headers: { Authorization: `token ${GH_TOKEN}`, "Content-Type": "application/json", "User-Agent": "pokescraper" },
-        body: JSON.stringify({ message: `deals update ${new Date().toISOString()}`, content, ...(sha ? { sha } : {}) }),
-      }
-    );
-    if (res.ok) console.log(`✅ Saved ${deals.length} deals to GitHub`);
-    else console.log("❌ GitHub save error:", (await res.json()).message);
-  } catch (e) {
-    console.log("❌ GitHub save error:", e.message);
-  }
-}
-
-// ─── STARTUP — single run for GitHub Actions ──────────────────────────────────
+// ─── STARTUP ───────────────────────────────────────────────────────────────────
 console.log("🚀 Lock3y's PokéScraper — GitHub Actions");
 console.log("🇬🇧 English sealed products only · All expansions");
-console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n");
+console.log("📊 Shopify JSON API · Full deal intelligence\n");
 
 (async () => {
   try {
-    const { findings: found, ebayToken } = await runScan();
+    const found = await runScan();
 
-    // Save all current in-stock deals to GitHub for the app
     if (found && found.length > 0) {
-      console.log("\n📡 Enriching deals with eBay sold price data...");
+      console.log("\n📡 Enriching deals with eBay market data...");
 
-      // Build enriched deals with eBay data
       const enriched = [];
       for (const f of found) {
-        const rrp = getRRP(f.title);
+        const rrp      = getRRP(f.title);
         const holdData = getHoldData(f.title);
+        // Use combined pricing: Finding API (sold) + Browse API (BIN)
+        const ebayResult = await getCombinedPrice(f.title, ebayToken);
+        await delay(400);
 
-        // Phase 2: Get real eBay sold price (replaces/supplements MARKET table)
-        const ebayResult = await getEbaySoldPrice(f.title, ebayToken);
-        await delay(400); // respectful rate limiting
-        // Multi-source: combine Browse API with PokeData sold prices
-        const combinedResult = await getCombinedFairValue(f.title, ebayResult);
-        await delay(200);
-
-        // Determine best resell value: eBay sold > hardcoded MARKET table
         const resellFromMarket = getMarket(f.title);
-        const resell = combinedResult?.fairValue || ebayResult?.fairValue || resellFromMarket || null;
-
-        // Phase 4: Compute deal score
-        const dealScore = computeDealScore(f.price, rrp, combinedResult || ebayResult, holdData);
+        const resell = ebayResult?.fairValue || resellFromMarket || null;
+        const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
         const grade = gradeFromScore(dealScore, !!holdData);
 
         enriched.push({
@@ -2096,12 +1056,8 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
           product: f.title,
           retailer: f.retailer,
           buyNow: f.price,
-          rrp,
-          resell,
-          // eBay intelligence fields (new)
-          dealScore,
-          grade,
-          resellSource: combinedResult?.source || (ebayResult ? "ebay_browse" : resellFromMarket ? "static_table" : null),
+          rrp, resell, dealScore, grade,
+          resellSource: ebayResult?.source || (resellFromMarket ? "static_table" : null),
           resellConfidence: ebayResult?.confidence || null,
           resellSampleSize: ebayResult?.sampleSize || null,
           resellFreshness: ebayResult?.freshness || null,
@@ -2113,13 +1069,21 @@ console.log("📊 Shopify JSON API + HTML fallback · Full deal intelligence\n")
         });
       }
 
-      // Phase 5: Write holdData alongside deals so frontend reads from single source
-      await saveDealsToGitHub(enriched, HOLD_DATA);
+      // Save deals.json with holdData envelope (Phase 5)
+      await saveToGitHub("deals.json", {
+        deals: enriched,
+        holdData: HOLD_DATA,
+        updatedAt: new Date().toISOString(),
+      });
 
-      // ── EBAY LIVE DEAL SCAN — completely separate from retailer data ──
+      // Scan eBay for live deal listings (separate tab)
       const ebayDeals = await scanEbayForDeals(ebayToken);
       if (ebayDeals.length > 0) {
-        await saveEbayDealsToGitHub(ebayDeals);
+        await saveToGitHub("ebay_deals.json", {
+          deals: ebayDeals,
+          updatedAt: new Date().toISOString(),
+          count: ebayDeals.length,
+        });
       } else {
         console.log("  ℹ️ No eBay deals found this scan");
       }
