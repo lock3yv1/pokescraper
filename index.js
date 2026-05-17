@@ -388,7 +388,7 @@ function buildEbaySearchQuery(title) {
   let t = title.toLowerCase();
   t = t.replace(/0% vat gvms/g,"").replace(/20% vat/g,"").replace(/gvms/g,"");
   t = t.replace(/acrylic case bundle/g,"").replace(/acrylic.*$/g,"");
-  t = t.replace(/slightly damaged/g,"");
+  t = t.replace(/slightly damaged/g,"").replace(/cosmetic damage/g,"");
   t = t.replace(/scarlet and violet/g,"").replace(/scarlet & violet/g,"")
        .replace(/sword and shield/g,"").replace(/sword & shield/g,"")
        .replace(/sun and moon/g,"").replace(/sun & moon/g,"")
@@ -397,10 +397,32 @@ function buildEbaySearchQuery(title) {
   t = t.replace(/[-|:]/g," ").replace(/[^a-z0-9 ]/g," ");
   t = t.replace(/ (the|and|of|from|with|for|by|a|an|contains|total|authentic|expansion) /g," ");
   t = t.replace(/  +/g," ").trim();
-  const query = ("pokemon " + t + " sealed")
+  // Keep product type keywords so blisters match blisters, not booster boxes
+  const keepType = ["booster box","elite trainer box","etb","booster bundle",
+    "blister","mini tin","half booster box","booster pack","collection box",
+    "premium collection","ultra premium","super premium"].find(k => t.includes(k));
+  const query = ("pokemon " + t + (keepType ? "" : " sealed"))
     .replace(/pokemon pokemon/g,"pokemon")
     .replace(/  +/g," ").trim();
   return query;
+}
+
+// Max sensible eBay price per product type — filters bad matches
+function maxEbayPrice(title) {
+  const t = title.toLowerCase();
+  if (t.includes("display case") || t.includes("sealed case")) return 2500;
+  if (t.includes("booster box") || t.includes("36 pack") || t.includes("36x pack")) return 600;
+  if (t.includes("half booster box") || t.includes("18 pack")) return 350;
+  if (t.includes("ultra premium") || t.includes("super premium")) return 500;
+  if (t.includes("elite trainer box") || t.includes(" etb")) return 350;
+  if (t.includes("premium collection")) return 250;
+  if (t.includes("booster bundle") || t.includes("6 pack") || t.includes("6x pack")) return 150;
+  if (t.includes("3-pack blister") || t.includes("3 pack blister")) return 80;
+  if (t.includes("blister") || t.includes("checklane")) return 60;
+  if (t.includes("mini tin")) return 60;
+  if (t.includes("booster pack") && !t.includes("box") && !t.includes("bundle")) return 50;
+  if (t.includes("tin")) return 150;
+  return 500;
 }
 
 async function getEbaySoldPrice(title, token) {
@@ -935,6 +957,9 @@ async function scrapeRetailer(retailer) {
           for (const v of variants) {
             const price = parseFloat(v.price || v.retail_price || 0);
             if (!isValidProduct(title, price)) continue;
+            // Skip out-of-stock products — Shopify sets available:false when sold out
+            const inStock = v.available !== false && p.available !== false;
+            if (!inStock) continue;
             const url2 = v.url || (p.handle ? `${retailer.base}/products/${p.handle}` : retailer.url || "");
             const image = p.images?.[0]?.src || p.image?.src || null;
             found.push({ title: title.trim(), price, url: url2, image, retailer: retailer.name });
@@ -1060,7 +1085,11 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
         }
 
         const resellFromMarket = getMarket(f.title);
-        const resell = ebayResult?.fairValue || resellFromMarket || null;
+        // Sanity check: if eBay price exceeds max for this product type, discard it
+        const maxEbay = maxEbayPrice(f.title);
+        const ebayFairValue = ebayResult?.fairValue;
+        const ebayValid = ebayFairValue && ebayFairValue <= maxEbay;
+        const resell = (ebayValid ? ebayFairValue : null) || resellFromMarket || null;
         const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
         const grade = gradeFromScore(dealScore, !!holdData);
 
