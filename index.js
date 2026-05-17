@@ -89,6 +89,11 @@ const ENGLISH_SETS = [
 
 // ─── BLOCKED TERMS ─────────────────────────────────────────────────────────────
 const BLOCK = [
+  // Digital codes — worthless for sealed product flipping
+  "online code","tcg online","tcg live","pokemon live","code card",
+  "digital code","online card","tcg code","digital only","code only",
+  "unused code","redeem","redemption code","promo code",
+  // Language
   "japanese","korean","chinese","german","french","italian","spanish",
   "Portuguese","dutch","polish","russian",
   "[jp]","japanese version","japanese ed",
@@ -345,8 +350,8 @@ function isValidProduct(title, price) {
   // Must be sealed product
   const ptype = getPtype(title);
   if (!ptype) return false;
-  // Price sanity
-  if (price <= 0 || price > 3000) return false;
+  // Price sanity — minimum £3 filters out digital codes, single energy cards etc
+  if (price < 3 || price > 3000) return false;
   return true;
 }
 
