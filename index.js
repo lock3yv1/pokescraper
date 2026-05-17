@@ -640,27 +640,11 @@ async function getEbaySoldPrice_Finding(title) {
 // ─── COMBINED PRICE: Sold (60%) + BIN (40%) ────────────────────────────────────
 // Sold prices are more accurate (actual transactions) so weighted higher
 async function getCombinedPrice(title, token) {
-  const [browseResult, soldResult] = await Promise.all([
-    getEbaySoldPrice(title, token),
-    getEbaySoldPrice_Finding(title),
-  ]);
-
-  if (browseResult && soldResult) {
-    // Both sources: weight sold 60%, BIN 40%
-    const combined = soldResult.fairValue * 0.60 + browseResult.fairValue * 0.40;
-    const fairValue = Math.round(combined * 100) / 100;
-    console.log(`    Combined: £${soldResult.fairValue} (sold) + £${browseResult.fairValue} (BIN) = £${fairValue}`);
-    return {
-      fairValue,
-      confidence: browseResult.confidence === "HIGH" && soldResult.confidence === "HIGH" ? "HIGH" : "MEDIUM",
-      sampleSize: browseResult.sampleSize + soldResult.sampleSize,
-      source: "ebay_browse+sold",
-      freshness: new Date().toISOString(),
-    };
-  }
-  if (soldResult) return soldResult;
-  if (browseResult) return browseResult;
-  return null;
+  // Browse API only for now — Finding API (sold listings) requires special
+  // account approval. Enable soldResult below once approved.
+  const browseResult = await getEbaySoldPrice(title, token);
+  // const soldResult = await getEbaySoldPrice_Finding(title); // ← enable when approved
+  return browseResult;
 }
 
 // ─── DEAL SCORE (0-100) ────────────────────────────────────────────────────────
@@ -1052,13 +1036,23 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
     if (found && found.length > 0) {
       console.log("\n📡 Enriching deals with eBay market data...");
 
+      // Deduplicate by product title before eBay enrichment
+      // Same product from multiple retailers → only look up eBay price once
+      const titlesSeen = new Map(); // title → ebay result
       const enriched = [];
       for (const f of found) {
         const rrp      = getRRP(f.title);
         const holdData = getHoldData(f.title);
-        // Use combined pricing: Finding API (sold) + Browse API (BIN)
-        const ebayResult = await getCombinedPrice(f.title, ebayToken);
-        await delay(400);
+        // Use cached eBay result if same title already enriched this run
+        const titleKey = f.title.toLowerCase().trim();
+        let ebayResult;
+        if (titlesSeen.has(titleKey)) {
+          ebayResult = titlesSeen.get(titleKey);
+        } else {
+          ebayResult = await getCombinedPrice(f.title, ebayToken);
+          titlesSeen.set(titleKey, ebayResult);
+          await delay(150);
+        }
 
         const resellFromMarket = getMarket(f.title);
         const resell = ebayResult?.fairValue || resellFromMarket || null;
