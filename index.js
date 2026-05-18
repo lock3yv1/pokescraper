@@ -54,7 +54,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 const ENGLISH_SETS = [
   // Mega Evolution era (2025-2026)
   "ascended heroes","destined rivals","perfect order","chaos rising",
-  "phantasmal flames","mega evolution","mega lucario","nihil zero",
+  "phantasmal flames","mega evolution","mega lucario",
   "black bolt","white flare","first partner",
   // Scarlet & Violet
   "journey together","prismatic evolutions","surging sparks","stellar crown",
@@ -366,6 +366,21 @@ function isValidProduct(title, price) {
   // Must have a valid set
   const hasSet = ENGLISH_SETS.some(s => t.includes(s));
   if (!hasSet) return false;
+
+  // Language filter: if title explicitly labels as non-English language,
+  // verify the SPECIFIC matched set is truly an English set name
+  // (prevents "Mega Evolution - Abyss Eye - Japanese" slipping through
+  //  just because "mega evolution" is in ENGLISH_SETS)
+  if (/\b(japanese|korean|chinese|simplified chinese|traditional chinese)\b/i.test(title)) {
+    // The matched set must itself be a primary English set identifier,
+    // not just a generic word that happens to be in ENGLISH_SETS
+    const matchedSet = ENGLISH_SETS.find(set => set.length >= 6 && t.includes(set));
+    if (!matchedSet) return false;
+    // Also block if the matched set contains "mega evolution" generically
+    // but the actual product is a Japanese sub-set of it
+    const isJapaneseSubset = /\b(abyss eye|paradise dragona|stellar miracle|night wanderer|mask of change|clay burst|snow hazard|wild force|cyber judge|future flash|violet ex|scarlet ex|triplet beat|ancient roar|lost abyss|battle region|brilliant stars jp|fusion arts|blue sky stream|evolving skies jp|matchless fighters)\b/i.test(title);
+    if (isJapaneseSubset) return false;
+  }
   // Must be sealed product
   const ptype = getPtype(title);
   if (!ptype) return false;
@@ -471,9 +486,12 @@ async function getEbaySoldPrice(title, token) {
 
   // For packs: check if rare set (higher cap)
   if (isPack) {
-    const rarePackSets = ["hidden fates","shining fates","champions path","cosmic eclipse",
-                          "evolving skies","chilling reign","battle styles","prismatic evolutions"];
-    if (rarePackSets.some(s => titleLower.includes(s))) priceMax = 28;
+    const veryRarePacks = ["hidden fates","shining fates","champions path","cosmic eclipse"];
+    if (veryRarePacks.some(set => titleLower.includes(set))) priceMax = 35;
+    const rarePacks = ["evolving skies","chilling reign","battle styles","prismatic evolutions",
+                       "brilliant stars","darkness ablaze","vivid voltage","silver tempest",
+                       "astral radiance","sword & shield","sword and shield"];
+    if (rarePacks.some(set => titleLower.includes(set))) priceMax = 22;
   }
 
   const rawQuery = buildEbaySearchQuery(title);
@@ -496,7 +514,34 @@ async function getEbaySoldPrice(title, token) {
     });
 
     if (!res.ok) {
-      console.log(`    eBay Browse API: HTTP ${res.status} for "${title.slice(0,35)}"`);
+      if (res.status === 429) {
+        console.log(`    eBay Browse API: HTTP 429 for "${title.slice(0,35)}" — backing off 4s`);
+        await delay(4000);
+        // One retry after backoff
+        try {
+          const retry = await fetch(`${EBAY_BROWSE_URL}/item_summary/search?${params}`, {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB",
+              "Accept": "application/json",
+            },
+          });
+          if (retry.ok) {
+            const rd = retry.json();
+            const ri = (rd?.itemSummaries||[]);
+            if (ri.length) {
+              const rp = parseFloat(ri[0]?.price?.value||0);
+              if (rp > priceMin && rp < priceMax) {
+                const result = { fairValue: rp, confidence: "LOW", sampleSize: 1, freshness: new Date().toISOString(), source: "ebay_browse_retry" };
+                _ebayPriceCache.set(cacheKey, result);
+                return result;
+              }
+            }
+          }
+        } catch(_) {}
+      } else {
+        console.log(`    eBay Browse API: HTTP ${res.status} for "${title.slice(0,35)}"`);
+      }
       _ebayPriceCache.set(cacheKey, null);
       return null;
     }
@@ -531,7 +576,8 @@ async function getEbaySoldPrice(title, token) {
         if (item.price?.currency !== "GBP") return false;
         const p = parseFloat(item.price?.value || 0);
         if (p < priceMin || p > priceMax) return false;
-        if (searchedSet && !t2.includes(searchedSet)) return false;
+        // Only enforce set name check for longer names to reduce false negatives
+        if (searchedSet && searchedSet.length > 8 && !t2.includes(searchedSet)) return false;
         return true;
       })
       .map(item => parseFloat(item.price?.value || 0))
@@ -702,8 +748,8 @@ function computeDealScore(buy, rrp, ebayResult, holdData) {
   const market = ebayResult?.fairValue || getMarket("") || null;
   if (!market || !buy) return score;
 
-  const fvf = market * EF + FEE_FIXED;
-  const net = market - buy - fvf - POST;
+  // Private UK sellers pay 0% eBay fees on trading cards/collectibles
+  const net = market - buy - POST;
   const roi = buy > 0 ? (net / buy) * 100 : 0;
 
   // Flip ROI component (0-50 pts)
@@ -787,6 +833,18 @@ const EBAY_SEARCH_TARGETS = [
   { q:"pokemon obsidian flames booster box sealed english",       type:"Booster Box",    marketMin:190, marketMax:255 },
   { q:"pokemon cosmic eclipse booster box sealed english",        type:"Booster Box",    marketMin:220, marketMax:350 },
   { q:"pokemon rebel clash booster box sealed english",           type:"Booster Box",    marketMin:185, marketMax:260 },
+  // Japanese/Korean sets - no english filter, include all variants
+  { q:"pokemon journey together half booster box",                type:"Half Box",       marketMin:85,  marketMax:130 },
+  { q:"pokemon battle partners japanese booster box",             type:"Booster Box",    marketMin:55,  marketMax:95  },
+  { q:"pokemon terastal festival japanese booster box",           type:"Booster Box",    marketMin:80,  marketMax:130 },
+  { q:"pokemon white flare japanese booster box",                 type:"Booster Box",    marketMin:120, marketMax:180 },
+  { q:"pokemon black bolt korean booster box",                    type:"Booster Box",    marketMin:50,  marketMax:85  },
+  { q:"pokemon nihil zero korean booster box",                    type:"Booster Box",    marketMin:45,  marketMax:75  },
+  { q:"pokemon heatwave arena korean booster box",                type:"Booster Box",    marketMin:45,  marketMax:80  },
+  { q:"pokemon glory of team rocket japanese booster box",        type:"Booster Box",    marketMin:160, marketMax:220 },
+  { q:"pokemon glory of team rocket korean booster box",          type:"Booster Box",    marketMin:45,  marketMax:75  },
+  { q:"pokemon perfect order elite trainer box sealed",           type:"ETB",            marketMin:55,  marketMax:90  },
+  { q:"pokemon ascended heroes booster box sealed english",       type:"Booster Box",    marketMin:100, marketMax:145 },
 ];
 
 const EBAY_MIN_DISCOUNT_PCT = 8;
@@ -807,6 +865,7 @@ async function scanEbayForDeals(token) {
 
   for (const target of EBAY_SEARCH_TARGETS) {
     try {
+      await delay(300); // respect rate limits between scan targets
       const params = new URLSearchParams({
         q: target.q,
         filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
@@ -822,7 +881,10 @@ async function scanEbayForDeals(token) {
         },
       });
 
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (res.status === 429) { await delay(2000); continue; }
+        continue;
+      }
       const data = res.json();
       const items = data?.itemSummaries || [];
 
@@ -919,7 +981,7 @@ async function sendAlert(deal) {
 const retailers = [
   // ── Confirmed working retailers ────────────────────────────────────────────
   { name:"Total Cards",         base:"https://www.totalcards.net",            type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed-products"] },
+    collections:["/collections/pokemon-sealed-products","/collections/pokemon","/products"] },
   { name:"Titan Cards",         base:"https://titancards.co.uk",              type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
   { name:"Eterna Cards",        base:"https://eternacards.co.uk",             type:"shopify-json",
@@ -928,8 +990,8 @@ const retailers = [
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
   { name:"My TCG",              base:"https://www.mytcg.co.uk",               type:"shopify-json",
     collections:["/products","/collections/pokemon-sealed-product","/collections/pokemon"] },
-  { name:"Zatu Games",          base:"https://www.zatugames.com",             type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed-product","/collections/pokemon"] },
+  // Zatu Games - DNS issues, skip
+  // { name:"Zatu Games", base:"https://www.zatugames.com", type:"shopify-json", collections:[] },
   { name:"Toys N Geek",         base:"https://www.toysngeek.co.uk",           type:"shopify-json",
     collections:["/products","/collections/pokemon","/collections/trading-cards"] },
   { name:"Gathering Games",     base:"https://www.gatheringgames.co.uk",      type:"shopify-json",
@@ -941,9 +1003,9 @@ const retailers = [
   { name:"Invicta TCG",         base:"https://invictatcg.co.uk",              type:"shopify-json",
     collections:["/products","/collections/pokemon","/collections/pokemon-sealed"] },
   { name:"The Card Vault",      base:"https://thecardvault.co.uk",            type:"shopify-json",
-    collections:["/products","/collections/pokemon-tcg-sealed-products","/collections/pokemon"] },
-  { name:"Pulse Collective",    base:"https://www.pulsecollective.co.uk",     type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/all"] },
+    collections:["/collections/pokemon-tcg-sealed-products","/collections/sealed-product","/collections/all","/products"] },
+  // Pulse Collective - 404s on all endpoints
+  // { name:"Pulse Collective", base:"https://www.pulsecollective.co.uk", type:"shopify-json", collections:[] },
   // ── Variable retailers (403/slower but worth trying) ──────────────────────
   { name:"Chaos Cards",         base:"https://www.chaoscards.co.uk",          type:"shopify-json",
     collections:["/collections/pokemon","/collections/tcg-pokemon"] },
@@ -953,14 +1015,25 @@ const retailers = [
     collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
   { name:"Goblin Gaming",       base:"https://www.goblingaming.co.uk",        type:"shopify-json",
     collections:["/products","/collections/pokemon"] },
-  { name:"Magic Madhouse",      base:"https://www.magicmadhouse.co.uk",       type:"shopify-json",
-    collections:["/products","/collections/pokemon","/collections/all"] },
-  { name:"PACKRAT",             base:"https://packrat.co.uk",                 type:"shopify-json",
-    collections:["/products","/collections/all","/collections/pokemon"] },
-  { name:"Emerald Collectables", base:"https://www.emeraldcollectables.co.uk", type:"shopify-json",
-    collections:["/products","/collections/pokemon-sealed","/collections/pokemon"] },
-  { name:"Pokemon Center UK",   base:"https://www.pokemoncenter.com",         type:"shopify-json",
-    collections:["/collections/trading-card-game-sealed","/collections/cards"] },
+  // ── Additional working retailers ──────────────────────────────────────────
+  { name:"Big Orbit Cards",    base:"https://www.bigorbitcards.co.uk",      type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon","/products"] },
+  { name:"Chaos Cards",        base:"https://www.chaoscards.co.uk",         type:"shopify-json",
+    collections:["/collections/pokemon-sealed-products","/collections/pokemon"] },
+  { name:"Leisure Games",      base:"https://leisuregames.com",             type:"shopify-json",
+    collections:["/collections/pokemon-sealed","/collections/pokemon-cards","/collections/pokemon"] },
+  { name:"Card Merchant",      base:"https://www.cardmerchant.co.uk",       type:"shopify-json",
+    collections:["/collections/pokemon","/collections/pokemon-sealed","/products"] },
+  { name:"Ace Comics",         base:"https://www.acecomics.co.uk",          type:"shopify-json",
+    collections:["/collections/pokemon","/collections/pokemon-cards","/products"] },
+  // Magic Madhouse - returns HTML not JSON
+  // { name:"Magic Madhouse", base:"https://www.magicmadhouse.co.uk", type:"shopify-json", collections:[] },
+  // PACKRAT - returns HTML not JSON
+  // { name:"PACKRAT", base:"https://packrat.co.uk", type:"shopify-json", collections:[] },
+  // Emerald Collectables - DNS NXDOMAIN, site down
+  // { name:"Emerald Collectables", base:"https://www.emeraldcollectables.co.uk", type:"shopify-json", collections:[] },
+  // Pokemon Center UK - 403
+  // { name:"Pokemon Center UK", base:"https://www.pokemoncenter.com", type:"shopify-json", collections:[] },
 ];
 
 // ─── SCRAPE A SINGLE RETAILER ──────────────────────────────────────────────────
@@ -978,7 +1051,7 @@ async function scrapeRetailer(retailer) {
         const url = `${retailer.base}${col}.json?limit=250&page=${page}`;
         const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; ShinyDen/1.0)", "Accept": "application/json" },
-          timeout: 6000,
+          timeout: 10000,
         });
 
         if (!res.ok) {
@@ -1005,7 +1078,8 @@ async function scrapeRetailer(retailer) {
             const price = parseFloat(v.price || v.retail_price || 0);
             if (!isValidProduct(title, price)) continue;
             // Skip out-of-stock products — Shopify sets available:false when sold out
-            const inStock = v.available !== false && p.available !== false;
+            // available===false means explicitly out of stock; null/undefined = assume in stock
+            const inStock = v.available !== false && (p.available === undefined || p.available !== false);
             if (!inStock) continue;
             const url2 = v.url || (p.handle ? `${retailer.base}/products/${p.handle}` : retailer.url || "");
             const image = p.images?.[0]?.src || p.image?.src || null;
@@ -1143,7 +1217,7 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
         } else {
           ebayResult = await getCombinedPrice(f.title, ebayToken);
           titlesSeen.set(titleKey, ebayResult);
-          await delay(150);
+          await delay(250);
         }
 
         const resellFromMarket = getMarket(f.title);
