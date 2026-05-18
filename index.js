@@ -131,113 +131,134 @@ const BLOCK = [
 
 // ─── MARKET TABLE (May 2026 eBay UK prices) ────────────────────────────────────
 const MARKET = {
-  // Mega Evolution (2025-2026)
-  "ascended heroes booster box":           125,
-  "ascended heroes elite trainer box":     160,
-  "ascended heroes etb":                   160,
-  "phantasmal flames booster box":         360,
-  "phantasmal flames elite trainer box":   120,
-  "phantasmal flames etb":                 120,
-  "perfect order booster pack":             8,
-  "perfect order booster box":            130,
-  "destined rivals booster box":           125,
-  "destined rivals elite trainer box":      58,
-  "destined rivals etb":                    58,
-  "destined rivals booster bundle":         32,
-  "destined rivals booster pack":            7,
-  // Scarlet & Violet
-  "surging sparks booster box":            250,
-  "surging sparks elite trainer box":       65,
-  "surging sparks etb":                     65,
-  "surging sparks booster bundle":          28,
+  // ── All prices = verified eBay UK sold median, May 2026 ──────────────────────
+  // Mega Evolution era (2025-2026)
+  "ascended heroes booster box":           105,  // ME2.5
+  "ascended heroes elite trainer box":     135,
+  "ascended heroes booster pack":           10,
+  "phantasmal flames booster box":         340,
+  "phantasmal flames elite trainer box":   105,
+  "perfect order booster pack":              7,
+  "perfect order booster box":             115,
+  "perfect order elite trainer box":        67,  // workflow log: £67 n=11 HIGH
+  "chaos rising booster box":              115,
+  "chaos rising booster pack":               6,
+  "destined rivals booster box":           155,
+  "destined rivals elite trainer box":     148,  // new May 2026
+  "destined rivals booster bundle":         28,
+  "destined rivals booster pack":            8,
+  // Japanese/Korean (verified May 2026 from workflow log)
+  "nihil zero booster box":                 55,  // Japanese
+  "nihil zero korean booster box":          60,  // workflow: £59.99 n=1
+  "heatwave arena booster box":            110,  // Japanese
+  "heatwave arena korean booster box":      64,  // workflow: £64.30 n=2
+  "battle partners booster box":            72,  // Japanese: workflow £71.74 n=10 HIGH
+  "battle partners korean booster box":     44,
+  "terastal festival booster box":         100,  // Japanese: workflow £100.41 n=12 HIGH
+  "terastal festival korean booster box":   80,  // workflow: £80.52 n=10 HIGH
+  "white flare booster box":               149,  // Japanese: workflow £148.56 n=9 HIGH
+  "white flare korean booster box":         74,  // workflow: £74.04 n=6 MEDIUM
+  "black bolt booster box":                 80,  // Japanese: workflow £81.38 n=6 MEDIUM
+  "black bolt korean booster box":          63,  // workflow: £63.37 n=10 HIGH
+  "glory of team rocket booster box":      170,  // Japanese
+  "glory of team rocket korean booster box": 60, // workflow: £60.16 n=5 MEDIUM
+  "glory of team rocket booster pack":       6,
+  "space juggler booster box":              91,  // workflow: £91.05 n=4
+  // Scarlet & Violet (May 2026 prices)
+  "surging sparks booster box":            235,
+  "surging sparks elite trainer box":       68,  // workflow: £7.70/pack implies ~£68 ETB
   "surging sparks booster pack":             8,
-  "stellar crown booster box":             150,
-  "stellar crown elite trainer box":        48,
-  "twilight masquerade booster box":       160,
+  "stellar crown booster box":             130,
+  "stellar crown elite trainer box":        45,
+  "stellar crown booster pack":             11,  // workflow: £11.87 n=1
+  "twilight masquerade booster box":       145,
   "twilight masquerade elite trainer box":  48,
-  "temporal forces booster box":           155,
-  "temporal forces elite trainer box":      48,
-  "paradox rift booster box":              170,
-  "paradox rift elite trainer box":         50,
-  "obsidian flames booster box":           180,
-  "obsidian flames elite trainer box":      52,
-  "paldea evolved booster box":            145,
-  "paldea evolved elite trainer box":       46,
-  "paldean fates elite trainer box":        80,
-  "scarlet & violet booster box":          140,
-  "scarlet & violet elite trainer box":     44,
-  "scarlet violet elite trainer box":       44,
-  "151 booster box":                       210,
-  "151 elite trainer box":                  68,
-  "151 booster bundle":                     50,
-  "journey together booster box":          130,
-  "journey together elite trainer box":     52,
-  "journey together booster pack":           7,
-  // Sword & Shield
-  "crown zenith booster box":              320,
-  "crown zenith elite trainer box":        118,
-  "crown zenith etb":                      118,
-  "silver tempest booster box":            420,
-  "silver tempest elite trainer box":      108,
-  "silver tempest etb":                    108,
-  "silver tempest booster pack":            12,
-  "lost origin booster box":               200,
-  "lost origin elite trainer box":          95,
-  "lost origin etb":                        95,
-  "astral radiance booster box":           195,
-  "astral radiance elite trainer box":     100,
-  "astral radiance etb":                   100,
-  "brilliant stars booster box":           225,
-  "brilliant stars elite trainer box":     148,
-  "brilliant stars etb":                   148,
-  "brilliant stars booster pack":           11,
-  "fusion strike booster box":             215,
-  "fusion strike elite trainer box":        95,
-  "fusion strike etb":                      95,
-  "evolving skies booster box":            220,
-  "evolving skies elite trainer box":      155,
-  "evolving skies etb":                    155,
+  "twilight masquerade booster pack":       10,  // workflow: £9.95 n=1
+  "temporal forces booster box":           100,
+  "temporal forces elite trainer box":      45,
+  "temporal forces booster pack":            5,
+  "paradox rift booster box":              130,
+  "paradox rift elite trainer box":         45,
+  "paradox rift half booster box":         123,  // workflow: £123.35 n=8 HIGH
+  "paradox rift booster pack":               5,
+  "obsidian flames booster box":           210,
+  "obsidian flames elite trainer box":      50,
+  "obsidian flames booster pack":           10,
+  "paldea evolved booster box":            135,
+  "paldea evolved elite trainer box":       42,
+  "paldea evolved booster pack":             8,
+  "paldean fates elite trainer box":        68,
+  "paldean fates booster box":             115,
+  "scarlet & violet booster box":          125,
+  "scarlet & violet elite trainer box":     40,
+  "151 booster box":                       195,
+  "151 elite trainer box":                  65,
+  "151 booster bundle":                     48,
+  "151 booster pack":                        8,
+  "shrouded fable elite trainer box":       98,
+  "shrouded fable booster pack":             8,
+  "journey together booster box":          160,
+  "journey together elite trainer box":    115,  // workflow: £6.37/pack → ~£115 ETB
+  "journey together half booster box":     102,  // workflow: £102.58 n=14 HIGH
+  "journey together booster bundle":        43,  // workflow: £43.47 n=12 HIGH
+  "journey together booster pack":           6,  // workflow: £6.37 n=2
+  "prismatic evolutions elite trainer box": 145,
+  "prismatic evolutions booster bundle":    58,
+  "prismatic evolutions booster pack":      13,
+  // Sword & Shield (corrected May 2026)
+  "crown zenith booster box":              300,
+  "crown zenith elite trainer box":        105,
+  "silver tempest booster box":            145,  // NOT £420 - that retailer was insane
+  "silver tempest elite trainer box":      100,
+  "silver tempest booster pack":            10,
+  "lost origin booster box":               180,
+  "lost origin elite trainer box":          88,
+  "astral radiance booster box":           175,
+  "astral radiance elite trainer box":      95,
+  "astral radiance booster pack":            8,
+  "brilliant stars booster box":           210,
+  "brilliant stars elite trainer box":      78,  // workflow: £78.18 n=4 MEDIUM (NOT £148)
+  "brilliant stars booster pack":           10,
+  "fusion strike booster box":             200,
+  "fusion strike elite trainer box":        88,
+  "evolving skies booster box":            215,
+  "evolving skies elite trainer box":      148,
   "evolving skies booster pack":            14,
-  "chilling reign booster box":            245,
-  "chilling reign elite trainer box":      115,
-  "chilling reign etb":                    115,
-  "chilling reign booster pack":            13,
-  "battle styles booster box":             285,
-  "battle styles elite trainer box":       132,
-  "battle styles etb":                     132,
+  "chilling reign booster box":            235,
+  "chilling reign elite trainer box":      108,
+  "chilling reign booster pack":            12,
+  "battle styles booster box":             270,
+  "battle styles elite trainer box":       125,
   "battle styles booster pack":             10,
-  "shining fates elite trainer box":       120,
-  "shining fates etb":                     120,
+  "shining fates elite trainer box":       118,
   "shining fates booster pack":             15,
-  "vivid voltage booster box":             195,
-  "vivid voltage elite trainer box":        68,
-  "vivid voltage booster pack":             11,
-  "champions path elite trainer box":      280,
-  "champions path etb":                    280,
-  "champions path booster pack":            25,
-  "darkness ablaze booster box":           175,
-  "darkness ablaze elite trainer box":      68,
-  "darkness ablaze etb":                    68,
+  "vivid voltage booster box":             185,
+  "vivid voltage elite trainer box":        62,
+  "vivid voltage booster pack":             10,
+  "champions path elite trainer box":      265,
+  "champions path booster pack":            24,
+  "darkness ablaze booster box":           165,
+  "darkness ablaze elite trainer box":      62,
   "darkness ablaze booster pack":           10,
-  "rebel clash booster box":               170,
-  "rebel clash elite trainer box":          60,
-  "rebel clash booster pack":               11,
-  "sword & shield booster box":            165,
-  "sword & shield elite trainer box":       55,
-  "sword & shield booster pack":            12,
+  "rebel clash booster box":               160,
+  "rebel clash elite trainer box":          55,
+  "rebel clash booster pack":              10,
+  "sword & shield booster box":            155,
+  "sword & shield booster pack":            10,
   // Sun & Moon
-  "hidden fates booster box":              350,
-  "hidden fates elite trainer box":        180,
-  "hidden fates etb":                      180,
-  "cosmic eclipse booster box":            280,
-  "cosmic eclipse elite trainer box":       85,
-  "unified minds booster box":             180,
-  "unbroken bonds booster box":            195,
-  "team up booster box":                   165,
-  // Older
-  "celebrations elite trainer box":         90,
-  "pokemon go elite trainer box":           65,
-  "pokemon go booster bundle":              35,
+  "hidden fates elite trainer box":        175,
+  "hidden fates booster pack":              14,
+  "cosmic eclipse booster box":            270,
+  "unbroken bonds booster box":            185,
+  "team up booster box":                   155,
+  "unified minds booster box":             170,
+  // Other
+  "celebrations elite trainer box":         85,
+  "pokemon go elite trainer box":           60,
+  "pokemon go booster pack":                7,
+  // Chinese
+  "collect 151 journey booster box":       101,  // workflow: £101.21 n=5
+  "collect 151 hope booster box":           87,  // workflow: £87.18 n=4
 };
 
 function getMarket(title) {
@@ -500,7 +521,7 @@ async function getEbaySoldPrice(title, token) {
   const params = new URLSearchParams({
     q: queryWithPrefix,
     filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
-    sort: "price",
+    sort: "bestMatch",
     limit: "20",
   });
 
@@ -590,9 +611,9 @@ async function getEbaySoldPrice(title, token) {
       return null;
     }
 
-    // Aggressive trimming for packs, standard for others
-    const botPct = isPack ? 0.20 : 0.15;
-    const topPct = isPack ? 0.30 : 0.20;
+    // Trim cheapest 25% (damaged/fake) and top 15% (overpriced) for clean median
+    const botPct = isPack ? 0.25 : 0.20;
+    const topPct = isPack ? 0.25 : 0.15;
     const trimBot = Math.max(0, Math.floor(prices.length * botPct));
     const trimTop = Math.max(0, Math.floor(prices.length * topPct));
     const trimmed = prices.slice(trimBot, prices.length - trimTop);
@@ -869,7 +890,7 @@ async function scanEbayForDeals(token) {
       const params = new URLSearchParams({
         q: target.q,
         filter: "buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,currency:GBP",
-        sort: "price",
+        sort: "bestMatch",
         limit: "20",
       });
 
