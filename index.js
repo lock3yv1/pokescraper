@@ -263,7 +263,9 @@ const MARKET = {
 
 function getMarket(title) {
   const t = title.toLowerCase();
-  for (const [k, v] of Object.entries(MARKET)) {
+  // Sort longest keys first so "half booster box" matches before "booster box"
+  const entries = Object.entries(MARKET).sort((a,b) => b[0].length - a[0].length);
+  for (const [k, v] of entries) {
     if (t.includes(k)) return v;
   }
   return null;
@@ -476,6 +478,7 @@ function maxEbayPrice(title) {
   if (t.includes("blister") || t.includes("checklane")) return 60;
   if (t.includes("mini tin")) return 60;
   if (t.includes("booster pack") && !t.includes("box") && !t.includes("bundle")) return 50;
+  if (t.includes("1-pack") || t.includes("single pack") || t.includes("1 pack blister") || t.includes("blister")) return 35;
   if (t.includes("tin")) return 150;
   return 500;
 }
