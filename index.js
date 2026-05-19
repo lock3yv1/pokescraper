@@ -152,7 +152,8 @@ const MARKET = {
   "nihil zero korean booster box":          60,  // workflow: £59.99 n=1
   "heatwave arena booster box":            110,  // Japanese
   "heatwave arena korean booster box":      64,  // workflow: £64.30 n=2
-  "battle partners booster box":            72,  // Japanese: workflow £71.74 n=10 HIGH
+  "battle partners booster box":            72,
+  "korean battle partners booster box":      44,  // Japanese: workflow £71.74 n=10 HIGH
   "battle partners korean booster box":     44,
   "terastal festival booster box":         100,  // Japanese: workflow £100.41 n=12 HIGH
   "terastal festival korean booster box":   80,  // workflow: £80.52 n=10 HIGH
@@ -269,6 +270,8 @@ function getMarket(title) {
   for (const [k, v] of entries) {
     if (isBox && !isHalf && k.includes("booster pack") && !k.includes("booster box")) continue;
     if (t.includes(k)) return v;
+    const kWords = k.split(" ");
+    if (kWords.length >= 3 && kWords.every(w => t.includes(w))) return v;
   }
   return null;
 }
