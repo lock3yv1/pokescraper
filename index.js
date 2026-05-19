@@ -411,6 +411,16 @@ function isValidProduct(title, price) {
   if (!ptype) return false;
   // Price sanity — minimum £3 filters out digital codes, single energy cards etc
   if (price < 3 || price > 3000) return false;
+  // Block damaged items
+  if (/slightly damaged|heavily damaged/i.test(title)) return false;
+  // Block VAT/GVMS trade pricing (massively inflated)
+  if (/vat gvms|0% vat/i.test(title)) return false;
+  // Block acrylic case bundles
+  if (/acrylic case/i.test(title)) return false;
+  // Block vintage single cards that slip through
+  if (/1st edition.{0,20}(common|uncommon)|expedition base set|aquapolis.*(uncommon|rare)|gym heroes.*(uncommon|rare)/i.test(title)) return false;
+  // Block random pack selections (no reliable market price)
+  if (/random selection|value pack \(\d/i.test(title)) return false;
   return true;
 }
 
@@ -1251,7 +1261,10 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
         const maxEbay = maxEbayPrice(f.title);
         const ebayFairValue = ebayResult?.fairValue;
         const ebayValid = ebayFairValue && ebayFairValue <= maxEbay;
-        const resell = (ebayValid ? ebayFairValue : null) || resellFromMarket || null;
+        // Also reject if eBay price is <65% of our known market price (scraper matched wrong item)
+        const marketKnown = getMarket(d.product || d.title || "");
+        const ebayTooLow = marketKnown && ebayFairValue && ebayFairValue < marketKnown * 0.65;
+        const resell = (ebayValid && !ebayTooLow ? ebayFairValue : null) || resellFromMarket || marketKnown || null;
         const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
         const grade = gradeFromScore(dealScore, !!holdData);
 
