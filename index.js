@@ -1262,9 +1262,10 @@ console.log("📊 Shopify JSON API · Full deal intelligence\n");
         const ebayFairValue = ebayResult?.fairValue;
         const ebayValid = ebayFairValue && ebayFairValue <= maxEbay;
         // Also reject if eBay price is <65% of our known market price (scraper matched wrong item)
-        const marketKnown = getMarket(d.product || d.title || "");
+        const marketKnown = getMarket(f.title || f.product || "");
         const ebayTooLow = marketKnown && ebayFairValue && ebayFairValue < marketKnown * 0.65;
-        const resell = (ebayValid && !ebayTooLow ? ebayFairValue : null) || resellFromMarket || marketKnown || null;
+        const ebayTooHigh = marketKnown && ebayFairValue && ebayFairValue > marketKnown * 1.4;
+        const resell = (ebayValid && !ebayTooLow && !ebayTooHigh ? ebayFairValue : null) || resellFromMarket || marketKnown || null;
         const dealScore = computeDealScore(f.price, rrp, ebayResult, holdData);
         const grade = gradeFromScore(dealScore, !!holdData);
 
