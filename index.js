@@ -262,10 +262,12 @@ const MARKET = {
 };
 
 function getMarket(title) {
-  const t = title.toLowerCase();
-  // Sort longest keys first so "half booster box" matches before "booster box"
+  const t = title.toLowerCase().replace(/[|\-]/g, " ").replace(/\s+/g, " ").trim();
+  const isBox = t.includes("booster box") || t.includes("display box");
+  const isHalf = t.includes("half") || t.includes("18 pack");
   const entries = Object.entries(MARKET).sort((a,b) => b[0].length - a[0].length);
   for (const [k, v] of entries) {
+    if (isBox && !isHalf && k.includes("booster pack") && !k.includes("booster box")) continue;
     if (t.includes(k)) return v;
   }
   return null;
